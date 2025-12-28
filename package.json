@@ -1,0 +1,16 @@
+{
+  "name": "llmio",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "install:all": "cd webui && npm install && npm run build && cd ../llmio-node && npm install",
+    "build:webui": "cd webui && npm run build",
+    "build:server": "cd llmio-node && npm run build",
+    "dev:server": "cd llmio-node && npm run dev",
+    "start:server": "cd llmio-node && npm run build && npm run start",
+    "dev": "npm run build:webui && npm run dev:server",
+    "start": "npm run build:webui && npm run start:server",
+    "db:init": "cd llmio-node && npm run db:init",
+    "db:seed": "cd llmio-node && npm run db:seed"
+  }
+}
