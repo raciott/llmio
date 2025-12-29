@@ -32,13 +32,31 @@ const anthropicConfigSchema = z.object({
   version: z.string().min(1, { message: 'Version 不能为空' }),
 });
 
+const embeddingConfigSchema = z.object({
+  base_url: z.string().min(1, { message: 'Base URL 不能为空' }),
+  api_key: z.string().min(1, { message: 'API Key 不能为空' }),
+  model: z.string().min(1, { message: '模型名称不能为空' }),
+});
+
 type AnthropicConfigForm = z.infer<typeof anthropicConfigSchema>;
+type EmbeddingConfigForm = z.infer<typeof embeddingConfigSchema>;
+
+interface EmbeddingConfig {
+  base_url: string;
+  api_key: string;
+  model: string;
+}
 
 export default function ConfigPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [config, setConfig] = useState<AnthropicCountTokens | null>(null);
   const [testing, setTesting] = useState(false);
+
+  // Embedding 配置状态
+  const [embeddingOpen, setEmbeddingOpen] = useState(false);
+  const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfig | null>(null);
+  const [embeddingTesting, setEmbeddingTesting] = useState(false);
 
   const form = useForm<AnthropicConfigForm>({
     resolver: zodResolver(anthropicConfigSchema),
@@ -49,10 +67,20 @@ export default function ConfigPage() {
     },
   });
 
+  const embeddingForm = useForm<EmbeddingConfigForm>({
+    resolver: zodResolver(embeddingConfigSchema),
+    defaultValues: {
+      base_url: '',
+      api_key: '',
+      model: 'text-embedding-3-small',
+    },
+  });
+
   useEffect(() => {
     const fetchConfig = async () => {
       try {
         setLoading(true);
+        // 获取 Anthropic 配置
         const response = await configAPI.getConfig('anthropic_count_tokens');
         if (response.value) {
           const anthropicConfig = JSON.parse(response.value) as AnthropicCountTokens;
@@ -60,10 +88,20 @@ export default function ConfigPage() {
         }
       } catch (error) {
         console.error('Failed to load config:', error);
-        // 配置不存在是正常的，不显示错误提示
-      } finally {
-        setLoading(false);
       }
+
+      try {
+        // 获取 Embedding 配置
+        const embeddingResponse = await configAPI.getConfig('embedding_config');
+        if (embeddingResponse.value) {
+          const embeddingCfg = JSON.parse(embeddingResponse.value) as EmbeddingConfig;
+          setEmbeddingConfig(embeddingCfg);
+        }
+      } catch (error) {
+        console.error('Failed to load embedding config:', error);
+      }
+
+      setLoading(false);
     };
 
     fetchConfig();
@@ -108,6 +146,61 @@ export default function ConfigPage() {
     }
   };
 
+  // Embedding 相关函数
+  const openEmbeddingDialog = () => {
+    embeddingForm.reset({
+      base_url: embeddingConfig?.base_url || 'https://api.openai.com/v1',
+      api_key: embeddingConfig?.api_key || '',
+      model: embeddingConfig?.model || 'text-embedding-3-small',
+    });
+    setEmbeddingOpen(true);
+  };
+
+  const testEmbeddingConfig = async () => {
+    if (!embeddingConfig) {
+      toast.error('请先配置 Embedding');
+      return;
+    }
+    try {
+      setEmbeddingTesting(true);
+      const token = localStorage.getItem('authToken');
+      const res = await fetch('/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          input: 'Hello, world!',
+          model: embeddingConfig.model,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || data.error?.message || '检测失败');
+      }
+      toast.success('Embedding 配置检测成功');
+    } catch (error) {
+      console.error('Embedding config test failed:', error);
+      const errorMessage = error instanceof Error ? error.message : '检测失败';
+      toast.error(`Embedding 配置检测失败: ${errorMessage}`);
+    } finally {
+      setEmbeddingTesting(false);
+    }
+  };
+
+  const onEmbeddingSubmit = async (values: EmbeddingConfigForm) => {
+    try {
+      await configAPI.updateConfig('embedding_config', values);
+      setEmbeddingConfig(values);
+      toast.success('Embedding 配置已保存');
+      setEmbeddingOpen(false);
+    } catch (error) {
+      console.error('Failed to save embedding config:', error);
+      toast.error('保存 Embedding 配置失败');
+    }
+  };
+
   if (loading) {
     return <Loading />;
   }
@@ -122,7 +215,7 @@ export default function ConfigPage() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Anthropic 令牌计数配置</CardTitle>
@@ -168,6 +261,62 @@ export default function ConfigPage() {
               disabled={!config?.api_key || testing}
             >
               {testing ? (
+                <>
+                  <span className="inline-block w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
+                  检测中...
+                </>
+              ) : (
+                '检测配置'
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Embedding 配置</CardTitle>
+            <CardDescription>
+              配置 Embedding API 用于文本向量化功能（OpenAI 兼容接口）
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Base URL</Label>
+                <p className="text-sm text-muted-foreground break-all">
+                  {embeddingConfig?.base_url || '未配置'}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>API Key</Label>
+                <p className="text-sm text-muted-foreground">
+                  {embeddingConfig?.api_key ? (
+                    <span className="font-mono">
+                      {embeddingConfig.api_key.substring(0, 8)}...
+                    </span>
+                  ) : (
+                    '未配置'
+                  )}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>默认模型</Label>
+                <p className="text-sm text-muted-foreground">
+                  {embeddingConfig?.model || '未配置'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+
+          <CardFooter className="flex justify-between">
+            <Button onClick={openEmbeddingDialog}>编辑配置</Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={testEmbeddingConfig}
+              disabled={!embeddingConfig?.api_key || embeddingTesting}
+            >
+              {embeddingTesting ? (
                 <>
                   <span className="inline-block w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
                   检测中...
@@ -235,6 +384,70 @@ export default function ConfigPage() {
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={closeDialog}>
+                  取消
+                </Button>
+                <Button type="submit">保存</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={embeddingOpen} onOpenChange={setEmbeddingOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>编辑 Embedding 配置</DialogTitle>
+            <DialogDescription>
+              配置 Embedding API 连接信息（支持 OpenAI 兼容接口）
+            </DialogDescription>
+          </DialogHeader>
+
+          <Form {...embeddingForm}>
+            <form onSubmit={embeddingForm.handleSubmit(onEmbeddingSubmit)} className="space-y-4">
+              <FormField
+                control={embeddingForm.control}
+                name="base_url"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Base URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://api.openai.com/v1" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={embeddingForm.control}
+                name="api_key"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>API Key</FormLabel>
+                    <FormControl>
+                      <Input placeholder="sk-..." {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={embeddingForm.control}
+                name="model"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>默认模型</FormLabel>
+                    <FormControl>
+                      <Input placeholder="text-embedding-3-small" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEmbeddingOpen(false)}>
                   取消
                 </Button>
                 <Button type="submit">保存</Button>

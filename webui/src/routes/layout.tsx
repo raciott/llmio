@@ -12,9 +12,11 @@ import {
   FaChevronLeft,
   FaChevronRight,
   FaCog,
-  FaKey
+  FaKey,
+  FaSnowflake
 } from "react-icons/fa";
 import { useTheme } from "@/components/theme-provider";
+import { useSnow } from "@/components/snow-effect";
 import { getVersion, checkLatestRelease, type GitHubRelease } from "@/lib/api";
 import {
   Dialog,
@@ -30,6 +32,7 @@ export default function Layout() {
   const [latestRelease, setLatestRelease] = useState<GitHubRelease | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { snowEnabled, setSnowEnabled } = useSnow();
   const navigate = useNavigate();
   const location = useLocation(); // 用于高亮当前选中的菜单
 
@@ -63,7 +66,7 @@ export default function Layout() {
     if (location.pathname === '/') {
       const checkForUpdates = async () => {
         try {
-          const release = await checkLatestRelease('atopos31', 'llmio');
+          const release = await checkLatestRelease('raciott', 'llmio');
           if (release && release.tag_name !== version) {
             setLatestRelease(release);
             setShowUpdateDialog(true);
@@ -117,10 +120,19 @@ export default function Layout() {
               <span className="ml-1 text-xs text-red-500">●</span>
             )}
           </Badge>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="icon"
-            className="hover:bg-accent hover:text-accent-foreground" 
+            className={`hover:bg-accent hover:text-accent-foreground ${snowEnabled ? 'text-blue-400' : ''}`}
+            onClick={() => setSnowEnabled(!snowEnabled)}
+            title={snowEnabled ? "关闭下雪效果" : "开启下雪效果"}
+          >
+            <FaSnowflake className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hover:bg-accent hover:text-accent-foreground"
             onClick={() => setTheme(theme === "light" ? "dark" : "light")}
           >
             <svg 

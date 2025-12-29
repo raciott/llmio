@@ -18,6 +18,7 @@ import { flushChatLogEventsToDb } from "./services/chat-log-queue.js";
 import { cleanupChatLogsKeepRecentDays, cleanupRedisChatLogsKeepRecentDays } from "./services/chat-log-retention.js";
 import { DefaultPort, StyleOpenAI, StyleOpenAIRes, StyleAnthropic } from "./consts.js";
 import { chatProxy, countTokensProxy } from "./services/chat.js";
+import { embeddingProxy } from "./services/embedding.js";
 import { modelsByTypes } from "./services/models.js";
 import { successRaw } from "./common/response.js";
 
@@ -103,6 +104,7 @@ app.post("/v1/chat/completions", authOpenAI(), async (c) => chatProxy(c, StyleOp
 app.post("/v1/responses", authOpenAI(), async (c) => chatProxy(c, StyleOpenAIRes));
 app.post("/v1/messages", authAnthropic(), async (c) => chatProxy(c, StyleAnthropic));
 app.post("/v1/messages/count_tokens", authAnthropic(), async (c) => countTokensProxy(c));
+app.post("/v1/embeddings", authOpenAI(), async (c) => embeddingProxy(c));
 
 // API 管理路由
 const apiApp = new Hono<AppEnv>();
