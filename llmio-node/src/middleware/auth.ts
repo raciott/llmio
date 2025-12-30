@@ -25,6 +25,8 @@ export function adminAuth(): MiddlewareHandler<AppEnv> {
 
 export function authOpenAI(): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
+    console.log("[authOpenAI] path:", c.req.path, "method:", c.req.method);
+    console.log("[authOpenAI] Authorization:", c.req.header("Authorization")?.substring(0, 30) + "...");
     const adminToken = c.env.TOKEN ?? "";
     const key = parseBearer(c.req.header("Authorization") ?? null);
     const res = await checkAuthKey(c, key, adminToken);
@@ -35,8 +37,15 @@ export function authOpenAI(): MiddlewareHandler<AppEnv> {
 
 export function authAnthropic(): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
+    console.log("[authAnthropic] path:", c.req.path, "method:", c.req.method);
+    console.log("[authAnthropic] x-api-key:", c.req.header("x-api-key")?.substring(0, 30) || "undefined");
+    console.log("[authAnthropic] Authorization:", c.req.header("Authorization")?.substring(0, 30) || "undefined");
     const adminToken = c.env.TOKEN ?? "";
-    const key = c.req.header("x-api-key") ?? "";
+    // 同时支持 x-api-key 和 Authorization: Bearer（Claude Code 使用后者）
+    let key = c.req.header("x-api-key") ?? "";
+    if (!key) {
+      key = parseBearer(c.req.header("Authorization") ?? null);
+    }
     const res = await checkAuthKey(c, key, adminToken);
     if (res) return res;
     await next();
@@ -45,6 +54,8 @@ export function authAnthropic(): MiddlewareHandler<AppEnv> {
 
 export function authGemini(): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
+    console.log("[authGemini] path:", c.req.path, "method:", c.req.method);
+    console.log("[authGemini] x-goog-api-key:", c.req.header("x-goog-api-key")?.substring(0, 30) + "...");
     const adminToken = c.env.TOKEN ?? "";
     const key = c.req.header("x-goog-api-key") ?? "";
     const res = await checkAuthKey(c, key, adminToken);
