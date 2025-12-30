@@ -14,8 +14,7 @@ import { openaiRoutes } from "./routes/openai.js";
 import { anthropicRoutes } from "./routes/anthropic.js";
 import { geminiRoutes } from "./routes/gemini.js";
 import { apiRoutes } from "./routes/api.js";
-import { flushChatLogEventsToDb } from "./services/chat-log-queue.js";
-import { cleanupChatLogsKeepRecentDays, cleanupRedisChatLogsKeepRecentDays } from "./services/chat-log-retention.js";
+import { cleanupChatLogsKeepRecentDays } from "./services/chat-log-retention.js";
 import { DefaultPort, StyleOpenAI, StyleOpenAIRes, StyleAnthropic } from "./consts.js";
 import { chatProxy, countTokensProxy } from "./services/chat.js";
 import { embeddingProxy } from "./services/embedding.js";
@@ -151,24 +150,11 @@ const env = {
   REDIS_DEFAULT_TTL_SECONDS: process.env.REDIS_DEFAULT_TTL_SECONDS,
 };
 
-// 每小时：Redis 队列 -> 数据库
-cron.schedule("0 * * * *", async () => {
-  console.log("[cron] Flushing chat log events to database...");
-  try {
-    const result = await flushChatLogEventsToDb(env as any, 500);
-    console.log(`[cron] Flush result: processed=${result.processed}, dead=${result.dead}, skipped=${result.skipped}`);
-  } catch (e) {
-    console.error("[cron] Flush error:", e);
-  }
-});
-
-// 每天 00:00 UTC：落库 + 清理 30 天前日志
+// 每天 00:00 UTC：清理 30 天前日志
 cron.schedule("0 0 * * *", async () => {
   console.log("[cron] Running daily cleanup...");
   try {
-    await flushChatLogEventsToDb(env as any, 500);
     await cleanupChatLogsKeepRecentDays(env as any, 30);
-    await cleanupRedisChatLogsKeepRecentDays(env as any, 30, 2000);
     console.log("[cron] Daily cleanup completed");
   } catch (e) {
     console.error("[cron] Cleanup error:", e);

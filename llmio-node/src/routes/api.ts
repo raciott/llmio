@@ -7,15 +7,6 @@ import { Version } from "../consts.js";
 import { fetchProviderModels } from "../services/providers.js";
 import type { AuthKeyRow } from "../db/repo.js";
 import { bumpNamespaceVersion, cacheGetJson, cacheSetJson } from "../services/cache.js";
-import {
-  getRedisChatIO,
-  getRedisModelCalls,
-  getRedisProjectCalls,
-  getRedisUseForDays,
-  listRedisChatLogs,
-  listRedisUserAgents,
-  redisLogsEnabled,
-} from "../services/chat-log-redis.js";
 
 export const apiRoutes = new Hono<AppEnv>();
 
@@ -108,21 +99,16 @@ apiRoutes.get("/metrics/use/:days", async (c) => {
   const days = Number.parseInt(c.req.param("days") ?? "", 10);
   if (!Number.isFinite(days)) return badRequest(c, "Invalid days parameter");
   try {
-    if (redisLogsEnabled(c.env)) {
-      const data = await getRedisUseForDays(c.env, days);
-      return success(c, data);
-    }
-
     const now = new Date();
     const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
     const cutoff = new Date(startOfToday.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
 
     const reqsResult = await c.env.db.query<{ cnt: string }>(
-      "SELECT COUNT(*) AS cnt FROM chat_logs WHERE created_at >= $1 AND deleted_at IS NULL",
+      "SELECT COUNT(*) AS cnt FROM chat_logs WHERE created_at >= $1",
       [cutoff]
     );
     const tokensResult = await c.env.db.query<{ tokens: string }>(
-      "SELECT COALESCE(SUM(total_tokens), 0) AS tokens FROM chat_logs WHERE created_at >= $1 AND deleted_at IS NULL",
+      "SELECT COALESCE(SUM(total_tokens), 0) AS tokens FROM chat_logs WHERE created_at >= $1",
       [cutoff]
     );
 
@@ -137,19 +123,9 @@ apiRoutes.get("/metrics/use/:days", async (c) => {
 
 apiRoutes.get("/metrics/counts", async (c) => {
   try {
-    if (redisLogsEnabled(c.env)) {
-      const callsMap = await getRedisModelCalls(c.env);
-      const rows = [...callsMap.entries()].map(([model, calls]) => ({ model, calls })).sort((a, b) => b.calls - a.calls);
-      const topN = 5;
-      if (rows.length <= topN) return success(c, rows);
-      const othersCalls = rows.slice(topN).reduce((acc, r) => acc + Number(r.calls ?? 0), 0);
-      return success(c, [...rows.slice(0, topN), { model: "others", calls: othersCalls }]);
-    }
-
     const result = await c.env.db.query<{ model: string; calls: string }>(
       `SELECT name AS model, COUNT(*) AS calls
        FROM chat_logs
-       WHERE deleted_at IS NULL
        GROUP BY name
        ORDER BY calls DESC`
     );
@@ -165,48 +141,12 @@ apiRoutes.get("/metrics/counts", async (c) => {
 
 apiRoutes.get("/metrics/projects", async (c) => {
   try {
-    if (redisLogsEnabled(c.env)) {
-      const cacheKey = "projects";
-      const cached = await cacheGetJson<any[]>(c.env, "metrics", cacheKey);
-      if (cached) return success(c, cached);
-
-      const callsMap = await getRedisProjectCalls(c.env);
-      const ids = [...callsMap.keys()].filter((id) => id !== 0);
-      let keyMap = new Map<number, string>();
-      if (ids.length > 0) {
-        const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
-        const result = await c.env.db.query<{ id: number; name: string }>(
-          `SELECT id, name FROM auth_keys WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
-          ids
-        );
-        keyMap = new Map((result.rows ?? []).map((k) => [Number(k.id), String(k.name ?? "").trim()]));
-      }
-
-      const projectCalls = new Map<string, number>();
-      for (const [id, calls] of callsMap.entries()) {
-        const project = id === 0 ? "admin" : keyMap.get(id) || "-";
-        projectCalls.set(project, (projectCalls.get(project) ?? 0) + Number(calls ?? 0));
-      }
-
-      const sorted = [...projectCalls.entries()]
-        .map(([project, calls]) => ({ project, calls }))
-        .sort((a, b) => b.calls - a.calls);
-      const topN = 5;
-      const payload =
-        sorted.length <= topN
-          ? sorted
-          : [...sorted.slice(0, topN), { project: "others", calls: sorted.slice(topN).reduce((acc, r) => acc + r.calls, 0) }];
-      await cacheSetJson(c.env, "metrics", cacheKey, payload);
-      return success(c, payload);
-    }
-
     const cached = await cacheGetJson<any[]>(c.env, "metrics", "projects");
     if (cached) return success(c, cached);
 
     const result = await c.env.db.query<{ auth_key_id: number; calls: string }>(
       `SELECT auth_key_id, COUNT(*) AS calls
        FROM chat_logs
-       WHERE deleted_at IS NULL
        GROUP BY auth_key_id
        ORDER BY calls DESC`
     );
@@ -217,7 +157,7 @@ apiRoutes.get("/metrics/projects", async (c) => {
     if (ids.length > 0) {
       const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
       const keysResult = await c.env.db.query<{ id: number; name: string }>(
-        `SELECT id, name FROM auth_keys WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+        `SELECT id, name FROM auth_keys WHERE id IN (${placeholders})`,
         ids
       );
       keyMap = new Map((keysResult.rows ?? []).map((k) => [Number(k.id), String(k.name ?? "").trim()]));
@@ -885,24 +825,13 @@ apiRoutes.get("/logs", async (c) => {
   if (params instanceof Error) return badRequest(c, params.message);
 
   try {
-    if (redisLogsEnabled(c.env)) {
-      const { limit, offset } = limitOffset(params);
-      const { total, items } = await listRedisChatLogs(c.env, offset, limit);
-      const wrapLogs = (items ?? []).map((log: any) => toChatLogDto({
-        ...log,
-        id: String(log.uuid ?? ""),
-        key_name: Number(log.auth_key_id ?? 0) === 0 ? "admin" : "",
-      }));
-      return success(c, newPaginationResponse(wrapLogs, total, params));
-    }
-
     const totalResult = await c.env.db.query<{ cnt: string }>(
-      "SELECT COUNT(*) AS cnt FROM chat_logs WHERE deleted_at IS NULL"
+      "SELECT COUNT(*) AS cnt FROM chat_logs"
     );
     const total = Number(totalResult.rows[0]?.cnt ?? 0);
     const { limit, offset } = limitOffset(params);
     const result = await c.env.db.query(
-      "SELECT * FROM chat_logs WHERE deleted_at IS NULL ORDER BY id DESC LIMIT $1 OFFSET $2",
+      "SELECT * FROM chat_logs ORDER BY id DESC LIMIT $1 OFFSET $2",
       [limit, offset]
     );
     const wrapLogs = (result.rows ?? []).map((log: any) => toChatLogDto({
@@ -919,15 +848,9 @@ apiRoutes.get("/logs/:id/chat-io", async (c) => {
   const raw = c.req.param("id") ?? "";
   const id = Number.parseInt(raw, 10);
   try {
-    if (redisLogsEnabled(c.env) && (!Number.isFinite(id) || String(id) !== raw)) {
-      const row = await getRedisChatIO(c.env, raw);
-      if (!row) return notFound(c, "ChatIO not found");
-      return success(c, row);
-    }
-
     if (!Number.isFinite(id)) return badRequest(c, "Invalid ID format");
     const result = await c.env.db.query(
-      "SELECT * FROM chat_io WHERE log_id = $1 AND deleted_at IS NULL",
+      "SELECT * FROM chat_io WHERE log_id = $1",
       [id]
     );
     if (result.rows.length === 0) return notFound(c, "ChatIO not found");
@@ -937,15 +860,83 @@ apiRoutes.get("/logs/:id/chat-io", async (c) => {
   }
 });
 
-apiRoutes.get("/user-agents", async (c) => {
+// 清理日志接口
+apiRoutes.post("/logs/cleanup", async (c) => {
   try {
-    if (redisLogsEnabled(c.env)) {
-      const list = await listRedisUserAgents(c.env);
-      return success(c, list);
+    const body = await c.req.json<{ type: "count" | "days"; value: number }>();
+    const { type, value } = body;
+
+    if (!type || !["count", "days"].includes(type)) {
+      return badRequest(c, "Invalid type, must be 'count' or 'days'");
+    }
+    if (!Number.isFinite(value) || value <= 0) {
+      return badRequest(c, "Invalid value, must be a positive number");
     }
 
+    let deletedCount = 0;
+
+    if (type === "days") {
+      // 删除 N 天前的日志
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - value);
+
+      // 先删除关联的 chat_io 记录
+      await c.env.db.query(
+        `DELETE FROM chat_io WHERE log_id IN (
+          SELECT id FROM chat_logs WHERE created_at < $1
+        )`,
+        [cutoffDate.toISOString()]
+      );
+
+      // 再删除 chat_logs
+      const result = await c.env.db.query(
+        "DELETE FROM chat_logs WHERE created_at < $1",
+        [cutoffDate.toISOString()]
+      );
+      deletedCount = result.rowCount ?? 0;
+    } else {
+      // 只保留最近 N 条日志
+      // 获取要保留的日志 ID 列表
+      const keepResult = await c.env.db.query<{ id: number }>(
+        `SELECT id FROM chat_logs ORDER BY created_at DESC LIMIT $1`,
+        [value]
+      );
+      const keepIds = keepResult.rows.map(r => r.id);
+      console.log("[logs/cleanup] Keep IDs:", keepIds);
+
+      if (keepIds.length > 0) {
+        // 删除不在保留列表中的 chat_io 记录
+        const placeholders = keepIds.map((_, i) => `$${i + 1}`).join(",");
+        await c.env.db.query(
+          `DELETE FROM chat_io WHERE log_id NOT IN (${placeholders})`,
+          keepIds
+        );
+
+        // 删除不在保留列表中的 chat_logs
+        const result = await c.env.db.query(
+          `DELETE FROM chat_logs WHERE id NOT IN (${placeholders})`,
+          keepIds
+        );
+        deletedCount = result.rowCount ?? 0;
+      } else {
+        // 如果没有要保留的，删除全部
+        await c.env.db.query("DELETE FROM chat_io");
+        const result = await c.env.db.query("DELETE FROM chat_logs");
+        deletedCount = result.rowCount ?? 0;
+      }
+    }
+
+    return success(c, { deleted_count: deletedCount });
+  } catch (e) {
+    console.error("[logs/cleanup] Error:", e);
+    return internalServerError(c, `Failed to cleanup logs: ${(e as Error).message}`);
+  }
+});
+
+apiRoutes.get("/user-agents", async (c) => {
+  try {
     const result = await c.env.db.query<{ user_agent: string }>(
-      "SELECT DISTINCT user_agent FROM chat_logs WHERE deleted_at IS NULL AND user_agent IS NOT NULL AND user_agent != ''"
+      "SELECT DISTINCT user_agent FROM chat_logs WHERE user_agent IS NOT NULL AND user_agent != ''"
     );
     return success(c, (result.rows ?? []).map((r) => r.user_agent));
   } catch (e) {

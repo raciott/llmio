@@ -20,10 +20,68 @@ function safeJsonParse(text: string): unknown | null {
   }
 }
 
+/**
+ * 简单的 token 估算函数
+ * 英文约 4 字符 = 1 token，中文约 1.5 字符 = 1 token
+ * 这是一个粗略估算，实际值可能有 10-20% 的误差
+ */
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+
+  // 分离中文和非中文字符
+  const chineseChars = text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || [];
+  const nonChineseLength = text.length - chineseChars.length;
+
+  // 中文：约 1.5 字符 = 1 token
+  // 英文/其他：约 4 字符 = 1 token
+  const chineseTokens = Math.ceil(chineseChars.length / 1.5);
+  const nonChineseTokens = Math.ceil(nonChineseLength / 4);
+
+  return chineseTokens + nonChineseTokens;
+}
+
+/**
+ * 从输出内容中提取文本用于 token 估算
+ */
+function extractOutputText(output: OutputUnion): string {
+  if (output.ofString) {
+    const obj = safeJsonParse(output.ofString);
+    if (obj && typeof obj === "object") {
+      // OpenAI 格式
+      const choices = (obj as any).choices;
+      if (Array.isArray(choices) && choices[0]?.message?.content) {
+        return choices[0].message.content;
+      }
+      // Anthropic 格式
+      const content = (obj as any).content;
+      if (Array.isArray(content) && content[0]?.text) {
+        return content[0].text;
+      }
+    }
+    return output.ofString;
+  }
+
+  // 流式输出：拼接所有 chunk 中的 content
+  let text = "";
+  for (const chunk of output.ofStringArray) {
+    const obj = safeJsonParse(chunk);
+    if (obj && typeof obj === "object") {
+      // OpenAI stream format
+      const delta = (obj as any).choices?.[0]?.delta?.content;
+      if (delta) text += delta;
+      // Anthropic stream format
+      const contentDelta = (obj as any).delta?.text;
+      if (contentDelta) text += contentDelta;
+    }
+  }
+  return text;
+}
+
 export async function processOpenAI(params: {
   stream: boolean;
   startedAtMs: number;
   body: ReadableStream<Uint8Array>;
+  inputText?: string;
 }): Promise<{ log: ChatLogPatch; output: OutputUnion }> {
   let firstChunkTimeMs = 0;
   let seenFirst = false;
@@ -70,8 +128,16 @@ export async function processOpenAI(params: {
     usage.prompt_tokens_details.audio_tokens = Number(d.audio_tokens ?? 0);
   }
 
+  // 如果上游没有返回 usage，则自动估算
+  if (usage.total_tokens === 0) {
+    const outputText = extractOutputText(output);
+    usage.completion_tokens = estimateTokens(outputText);
+    usage.prompt_tokens = params.inputText ? estimateTokens(params.inputText) : 0;
+    usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
+  }
+
   const chunkTimeMs = Math.max(0, Math.floor(Date.now() - params.startedAtMs - firstChunkTimeMs));
-  const tps = chunkTimeMs > 0 ? usage.total_tokens / (chunkTimeMs / 1000) : 0;
+  const tps = chunkTimeMs > 0 ? usage.completion_tokens / (chunkTimeMs / 1000) : 0;
   return {
     log: { first_chunk_time_ms: firstChunkTimeMs, chunk_time_ms: chunkTimeMs, usage, tps, size },
     output,
@@ -82,6 +148,7 @@ export async function processOpenAIRes(params: {
   stream: boolean;
   startedAtMs: number;
   body: ReadableStream<Uint8Array>;
+  inputText?: string;
 }): Promise<{ log: ChatLogPatch; output: OutputUnion }> {
   let firstChunkTimeMs = 0;
   let seenFirst = false;
@@ -133,8 +200,16 @@ export async function processOpenAIRes(params: {
     usage.prompt_tokens_details.cached_tokens = Number(u.input_tokens_details?.cached_tokens ?? 0);
   }
 
+  // 如果上游没有返回 usage，则自动估算
+  if (usage.total_tokens === 0) {
+    const outputText = extractOutputText(output);
+    usage.completion_tokens = estimateTokens(outputText);
+    usage.prompt_tokens = params.inputText ? estimateTokens(params.inputText) : 0;
+    usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
+  }
+
   const chunkTimeMs = Math.max(0, Math.floor(Date.now() - params.startedAtMs - firstChunkTimeMs));
-  const tps = chunkTimeMs > 0 ? usage.total_tokens / (chunkTimeMs / 1000) : 0;
+  const tps = chunkTimeMs > 0 ? usage.completion_tokens / (chunkTimeMs / 1000) : 0;
   return {
     log: { first_chunk_time_ms: firstChunkTimeMs, chunk_time_ms: chunkTimeMs, usage, tps, size },
     output,
@@ -145,6 +220,7 @@ export async function processAnthropic(params: {
   stream: boolean;
   startedAtMs: number;
   body: ReadableStream<Uint8Array>;
+  inputText?: string;
 }): Promise<{ log: ChatLogPatch; output: OutputUnion }> {
   let firstChunkTimeMs = 0;
   let seenFirst = false;
