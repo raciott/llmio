@@ -10,6 +10,7 @@ import cron from "node-cron";
 
 import type { AppEnv } from "./types.js";
 import { adminAuth, authAnthropic, authGemini, authOpenAI } from "./middleware/auth.js";
+import { metricsMiddleware } from "./middleware/metrics.js";
 import { openaiRoutes } from "./routes/openai.js";
 import { anthropicRoutes } from "./routes/anthropic.js";
 import { geminiRoutes } from "./routes/gemini.js";
@@ -20,6 +21,9 @@ import { chatProxy, countTokensProxy } from "./services/chat.js";
 import { embeddingProxy } from "./services/embedding.js";
 import { modelsByTypes } from "./services/models.js";
 import { successRaw } from "./common/response.js";
+import { metrics, setDatabasePoolSize, startSystemMetricsCollection, stopSystemMetricsCollection } from "./services/metrics.js";
+import { getSystemHealth } from "./services/health.js";
+import { initRpmLimiter } from "./services/rpm-limiter.js";
 
 // 初始化数据库连接池
 const db = new Pool({
@@ -42,6 +46,9 @@ if (process.env.REDIS_URL) {
   redis.on("error", (err: Error) => console.error("Redis error:", err));
 }
 
+// 初始化 RPM 限流器
+initRpmLimiter(redis);
+
 // 创建 Hono 应用
 const app = new Hono<AppEnv>();
 
@@ -61,6 +68,9 @@ const injectEnv = async (c: any, next: any) => {
 
 // 注入环境变量（主应用）
 app.use("*", injectEnv);
+
+// 监控中间件（记录所有请求指标）
+app.use("*", metricsMiddleware());
 
 // OpenAI 兼容路由
 const openaiApp = new Hono<AppEnv>();
@@ -104,6 +114,71 @@ app.post("/v1/responses", authOpenAI(), async (c) => chatProxy(c, StyleOpenAIRes
 app.post("/v1/messages", authAnthropic(), async (c) => chatProxy(c, StyleAnthropic));
 app.post("/v1/messages/count_tokens", authAnthropic(), async (c) => countTokensProxy(c));
 app.post("/v1/embeddings", authOpenAI(), async (c) => embeddingProxy(c));
+
+// 健康检查端点（不需要认证，移到 /api 下避免与前端路由冲突）
+app.get("/api/health", async (c) => {
+  const checks = {
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    database: "unknown",
+    redis: "unknown",
+  };
+
+  // 检查数据库连接
+  try {
+    await db.query("SELECT 1");
+    checks.database = "connected";
+  } catch (e) {
+    checks.status = "degraded";
+    checks.database = "disconnected";
+  }
+
+  // 检查 Redis 连接（如果启用）
+  if (redis) {
+    try {
+      await redis.ping();
+      checks.redis = "connected";
+    } catch (e) {
+      checks.status = "degraded";
+      checks.redis = "disconnected";
+    }
+  } else {
+    checks.redis = "disabled";
+  }
+
+  const statusCode = checks.status === "ok" ? 200 : 503;
+  return c.json(checks, statusCode);
+});
+
+// 详细健康检查端点（包含 Provider 状态）
+app.get("/api/health/detail", async (c) => {
+  // 从查询参数获取时间窗口（分钟），默认 60 分钟
+  const windowParam = c.req.query("window");
+  const timeWindowMinutes = windowParam ? Number.parseInt(windowParam, 10) : 60;
+
+  // 确保时间窗口在合理范围内 (5分钟 ~ 7天)
+  const validWindow = Math.max(5, Math.min(timeWindowMinutes, 10080));
+
+  const systemHealth = await getSystemHealth(db, redis, validWindow);
+  const statusCode = systemHealth.status === "healthy" ? 200 : systemHealth.status === "degraded" ? 200 : 503;
+  return c.json(systemHealth, statusCode);
+});
+
+// Prometheus 指标端点（不需要认证）
+app.get("/api/metrics", async (c) => {
+  // 更新数据库连接池指标
+  setDatabasePoolSize(
+    db.totalCount,
+    db.idleCount,
+    db.waitingCount
+  );
+
+  const metricsText = metrics.export();
+  return c.text(metricsText, 200, {
+    "Content-Type": "text/plain; version=0.0.4",
+  });
+});
 
 // API 管理路由
 const apiApp = new Hono<AppEnv>();
@@ -167,6 +242,9 @@ const host = process.env.HOST || "0.0.0.0";
 
 console.log(`Starting llmio-node server on ${host}:${port}...`);
 
+// 启动系统指标收集
+startSystemMetricsCollection();
+
 serve({
   fetch: app.fetch,
   port,
@@ -178,6 +256,7 @@ serve({
 // 优雅关闭
 process.on("SIGINT", async () => {
   console.log("\nShutting down...");
+  stopSystemMetricsCollection();
   await db.end();
   if (redis) await redis.quit();
   process.exit(0);
@@ -185,6 +264,7 @@ process.on("SIGINT", async () => {
 
 process.on("SIGTERM", async () => {
   console.log("Shutting down...");
+  stopSystemMetricsCollection();
   await db.end();
   if (redis) await redis.quit();
   process.exit(0);

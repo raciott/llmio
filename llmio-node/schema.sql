@@ -18,6 +18,8 @@ CREATE TABLE providers (
   type TEXT NOT NULL,
   config TEXT NOT NULL DEFAULT '{}',
   console TEXT NOT NULL DEFAULT '',
+  rpm_limit INTEGER NOT NULL DEFAULT 0, -- 每分钟请求数限制，0 表示无限制
+  ip_lock_minutes INTEGER NOT NULL DEFAULT 0, -- IP 锁定时间（分钟），0 表示不锁定
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ
@@ -122,6 +124,9 @@ CREATE TABLE chat_io (
 CREATE INDEX idx_chat_logs_created_at ON chat_logs(created_at);
 CREATE INDEX idx_chat_logs_name ON chat_logs(name);
 CREATE INDEX idx_chat_logs_auth_key_id ON chat_logs(auth_key_id);
+CREATE INDEX idx_chat_logs_provider_name ON chat_logs(provider_name);
+CREATE INDEX idx_chat_logs_status ON chat_logs(status);
+CREATE INDEX idx_chat_logs_provider_created ON chat_logs(provider_name, created_at);
 CREATE INDEX idx_providers_deleted_at ON providers(deleted_at);
 CREATE INDEX idx_models_deleted_at ON models(deleted_at);
 CREATE INDEX idx_auth_keys_key ON auth_keys(key);

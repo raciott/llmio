@@ -86,6 +86,7 @@ const formSchema = z.object({
   type: z.string().min(1, { message: "提供商类型不能为空" }),
   config: z.string().min(1, { message: "配置不能为空" }),
   console: z.string().optional(),
+  rpmLimit: z.number().min(0, { message: "RPM 限制必须大于等于 0" }).optional(),
 });
 
 export default function ProvidersPage() {
@@ -111,7 +112,7 @@ export default function ProvidersPage() {
   // 初始化表单
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", type: "", config: "", console: "" },
+    defaultValues: { name: "", type: "", config: "", console: "", rpmLimit: 0 },
   });
   const selectedProviderType = form.watch("type");
 
@@ -133,7 +134,7 @@ export default function ProvidersPage() {
     }
 
     const defaultConfig = JSON.stringify(
-      { base_url: "", api_key: "", weight: 1, enabled: true },
+      { base_url: "", api_key: "" },
       null,
       2
     );
@@ -248,11 +249,12 @@ export default function ProvidersPage() {
         name: values.name,
         type: values.type,
         config: values.config,
-        console: values.console || ""
+        console: values.console || "",
+        rpm_limit: values.rpmLimit || 0
       });
       setOpen(false);
       toast.success(`提供商 ${values.name} 创建成功`);
-      form.reset({ name: "", type: "", config: "", console: "" });
+      form.reset({ name: "", type: "", config: "", console: "", rpmLimit: 0 });
       fetchProviders();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -268,12 +270,13 @@ export default function ProvidersPage() {
         name: values.name,
         type: values.type,
         config: values.config,
-        console: values.console || ""
+        console: values.console || "",
+        rpm_limit: values.rpmLimit || 0
       });
       setOpen(false);
       toast.success(`提供商 ${values.name} 更新成功`);
       setEditingProvider(null);
-      form.reset({ name: "", type: "", config: "", console: "" });
+      form.reset({ name: "", type: "", config: "", console: "", rpmLimit: 0 });
       fetchProviders();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -305,6 +308,7 @@ export default function ProvidersPage() {
       type: provider.Type,
       config: provider.Config,
       console: provider.Console || "",
+      rpmLimit: provider.RpmLimit || 0,
     });
     setOpen(true);
   };
@@ -323,7 +327,7 @@ export default function ProvidersPage() {
         const parsed = parseConfigJson(firstTemplate.template);
         if (parsed) return JSON.stringify(parsed, null, 2);
         // 没有模板时使用默认字段的 JSON
-        return JSON.stringify({ base_url: "", api_key: "", weight: 1, enabled: true }, null, 2);
+        return JSON.stringify({ base_url: "", api_key: "" }, null, 2);
       })()
       : "";
     form.reset({
@@ -668,6 +672,29 @@ export default function ProvidersPage() {
                     <FormControl>
                       <Input {...field} placeholder="https://example.com/console" />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="rpmLimit"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>RPM 限制</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder="0 表示无限制"
+                        value={field.value ?? 0}
+                        onChange={(e) => field.onChange(Number(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">
+                      每分钟最大请求数，0 表示无限制。达到限制后会自动切换到其他供应商。
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}

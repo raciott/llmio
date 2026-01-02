@@ -9,6 +9,9 @@ import { newBalancer } from "./balancers.js";
 import { processAnthropic, processGemini, processOpenAI, processOpenAIRes } from "./process.js";
 import type { ChatLogBase } from "./chat-log-events.js";
 import { enqueueChatLogEvent } from "./chat-log-queue.js";
+import { recordProviderRequest, recordError, recordRetry, recordTokenUsage } from "./metrics.js";
+import { recordProviderHealth } from "./health.js";
+import { checkRpmLimit, recordRpmRequest } from "./rpm-limiter.js";
 
 type ProvidersWithMeta = {
   modelWithProviderMap: Map<number, any>;
@@ -222,6 +225,9 @@ async function balanceChat(c: Context<AppEnv>, startedAtMs: number, style: Style
   const timerEndMs = Date.now() + timeOutSeconds * 1000;
   let lastError = "";
 
+  // 记录因 RPM 限制被跳过的供应商
+  const rpmLimitedProviders = new Set<number>();
+
   for (let retry = 0; retry < totalRetries; retry++) {
     if (Date.now() > timerEndMs) throw new Error("retry time out");
 
@@ -230,6 +236,13 @@ async function balanceChat(c: Context<AppEnv>, startedAtMs: number, style: Style
       id = balancer.pop();
     } catch (e) {
       const msg = (e as Error).message || "no providers available";
+
+      // 如果所有供应商都因 RPM 限制被跳过，返回特定错误
+      if (rpmLimitedProviders.size > 0 && !lastError) {
+        lastError = "所有供应商已达到 RPM 限制，请一分钟后再尝试";
+        break;
+      }
+
       // balancer 为空时，如果之前已有更具体的失败原因（例如配置解析失败/上游返回码），优先保留
       if (!lastError) {
         // 这里的报错多半是：没有任何"该 style 的可用渠道"匹配到该模型（或全被禁用/权重为 0）
@@ -250,6 +263,20 @@ async function balanceChat(c: Context<AppEnv>, startedAtMs: number, style: Style
     if (!provider) {
       balancer.delete(id);
       continue;
+    }
+
+    // 检查供应商的 RPM 限制
+    const providerId = Number(provider.id);
+    const rpmLimit = Number(provider.rpm_limit ?? 0);
+
+    if (rpmLimit > 0) {
+      const canProceed = await checkRpmLimit(providerId, rpmLimit);
+      if (!canProceed) {
+        console.log(`[chat] Provider ${provider.name} (ID: ${providerId}) reached RPM limit (${rpmLimit}), trying next provider`);
+        rpmLimitedProviders.add(providerId);
+        balancer.reduce(id); // 降低权重，但不完全删除
+        continue;
+      }
     }
 
     const logBase = {
@@ -296,12 +323,14 @@ async function balanceChat(c: Context<AppEnv>, startedAtMs: number, style: Style
       console.log("[chat] Headers:", Object.fromEntries(headers.entries()));
       console.log("[chat] Body:", built.body.substring(0, 200));
 
+      const startTime = Date.now();
       const res = await fetch(fullUrl, {
         method: "POST",
         headers: Object.fromEntries(headers.entries()),
         body: built.body,
         signal: controller.signal,
       });
+      const durationMs = Date.now() - startTime;
 
       console.log("[chat] Response status:", res.status);
 
@@ -309,25 +338,56 @@ async function balanceChat(c: Context<AppEnv>, startedAtMs: number, style: Style
         const bodyText = await res.text().catch(() => "");
         lastError = `upstream status: ${res.status}, provider: ${String(provider.name ?? "")}, model: ${String(mp.provider_model ?? "")}, body: ${bodyText}`;
         await saveRetryLog(c, { ...logBase, status: "error", error: lastError });
+
+        // 记录失败的 Provider 请求指标和健康状态
+        const providerName = String(provider.name ?? "unknown");
+        const providerModel = String(mp.provider_model ?? "unknown");
+        recordProviderRequest(providerName, providerModel, false, durationMs);
+        recordProviderHealth(providerName, false, durationMs, lastError);
+        recordError("provider_error", providerName, providerModel);
+
         if (res.status === 429) balancer.reduce(id);
         else balancer.delete(id);
         continue;
       }
 
+      // 请求成功，记录 RPM 计数
+      await recordRpmRequest(providerId);
+
       balancer.success(id);
       const baseLog = toChatLogBase(logBase);
       enqueueChatLogEvent(c.env, { type: "insert", base: baseLog }).catch(console.error);
+
+      // 记录成功的 Provider 请求指标和健康状态
+      const providerName = String(provider.name ?? "unknown");
+      const providerModel = String(mp.provider_model ?? "unknown");
+      recordProviderRequest(providerName, providerModel, true, durationMs);
+      recordProviderHealth(providerName, true, durationMs);
+
       return { res, logUUID: baseLog.uuid, logBase: baseLog, ioLog: providersWithMeta.ioLog };
     } catch (e) {
       const err = e as Error;
       console.error("[chat] Fetch error:", err.message, err.cause ?? "");
       lastError = err.message;
       await saveRetryLog(c, { ...logBase, status: "error", error: lastError });
+
+      // 记录异常的 Provider 请求
+      const providerName = String(provider.name ?? "unknown");
+      const providerModel = String(mp.provider_model ?? "unknown");
+      recordProviderRequest(providerName, providerModel, false, 0);
+      recordProviderHealth(providerName, false, 0, err.message);
+      recordError("provider_exception", providerName, providerModel);
+
       balancer.delete(id);
       continue;
     } finally {
       if (timeout !== null) clearTimeout(timeout);
     }
+  }
+
+  // 如果所有供应商都因 RPM 限制被跳过
+  if (rpmLimitedProviders.size > 0 && (!lastError || lastError.includes("no provide items"))) {
+    throw new Error("所有供应商已达到 RPM 限制，请一分钟后再尝试");
   }
 
   throw new Error(lastError || "maximum retry attempts reached");
@@ -384,6 +444,21 @@ async function recordLog(
               : (() => {
                   throw new Error("unknown style");
                 })();
+
+    // 记录 token 使用情况到 metrics
+    if (processed.log.usage.prompt_tokens > 0 || processed.log.usage.completion_tokens > 0) {
+      recordTokenUsage(
+        logBase.provider_name,
+        logBase.provider_model,
+        processed.log.usage.prompt_tokens,
+        processed.log.usage.completion_tokens
+      );
+    }
+
+    // 记录重试次数（如果有重试）
+    if (logBase.retry > 0) {
+      recordRetry(logBase.provider_name, logBase.provider_model, logBase.retry);
+    }
 
     const now = new Date().toISOString();
     await enqueueChatLogEvent(c.env, {

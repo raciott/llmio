@@ -5,6 +5,8 @@ import { buildHeaders } from "./headers.js";
 import { applyProviderAuthHeaders } from "./providers.js";
 import { newBalancer } from "./balancers.js";
 import { StyleOpenAI } from "../consts.js";
+import { recordProviderRequest, recordError } from "./metrics.js";
+import { recordProviderHealth } from "./health.js";
 
 interface EmbeddingRequest {
   input: string | string[];
@@ -184,18 +186,29 @@ async function balanceEmbedding(
       console.log("[embedding] Fetching:", fullUrl);
       console.log("[embedding] Model mapping:", body.model, "->", requestBody.model);
 
+      const startTime = Date.now();
       const res = await fetch(fullUrl, {
         method: "POST",
         headers: Object.fromEntries(headers.entries()),
         body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
+      const durationMs = Date.now() - startTime;
 
       console.log("[embedding] Response status:", res.status);
 
+      const providerName = String(provider.name ?? "unknown");
+      const providerModel = String(mp.provider_model ?? "unknown");
+
       if (res.status !== 200) {
         const bodyText = await res.text().catch(() => "");
-        lastError = `upstream status: ${res.status}, provider: ${String(provider.name ?? "")}, model: ${String(mp.provider_model ?? "")}, body: ${bodyText}`;
+        lastError = `upstream status: ${res.status}, provider: ${providerName}, model: ${providerModel}, body: ${bodyText}`;
+
+        // 记录失败的 Provider 请求指标和健康状态
+        recordProviderRequest(providerName, providerModel, false, durationMs);
+        recordProviderHealth(providerName, false, durationMs, lastError);
+        recordError("provider_error", providerName, providerModel);
+
         if (res.status === 429) {
           balancer.reduce(id);
         } else {
@@ -205,11 +218,24 @@ async function balanceEmbedding(
       }
 
       balancer.success(id);
+
+      // 记录成功的 Provider 请求指标和健康状态
+      recordProviderRequest(providerName, providerModel, true, durationMs);
+      recordProviderHealth(providerName, true, durationMs);
+
       return res;
     } catch (e) {
       const err = e as Error;
       console.error("[embedding] Fetch error:", err.message);
       lastError = err.message;
+
+      // 记录异常的 Provider 请求
+      const providerName = String(provider.name ?? "unknown");
+      const providerModel = String(mp.provider_model ?? "unknown");
+      recordProviderRequest(providerName, providerModel, false, 0);
+      recordProviderHealth(providerName, false, 0, err.message);
+      recordError("provider_exception", providerName, providerModel);
+
       balancer.delete(id);
       continue;
     } finally {

@@ -45,16 +45,22 @@ export function buildProviderRequest(params: {
   switch (style) {
     case StyleOpenAI: {
       json["model"] = providerModel;
+      // 过滤空文本内容块，避免 Bedrock API 报错
+      sanitizeMessages(json, "messages");
       const body = JSON.stringify(json);
       return { path: "/chat/completions", body, contentType: "application/json" };
     }
     case StyleOpenAIRes: {
       json["model"] = providerModel;
+      // 过滤空文本内容块
+      sanitizeMessages(json, "input");
       const body = JSON.stringify(json);
       return { path: "/responses", body, contentType: "application/json" };
     }
     case StyleAnthropic: {
       json["model"] = providerModel;
+      // 过滤空文本内容块，避免 Bedrock API 报错
+      sanitizeMessages(json, "messages");
       const body = JSON.stringify(json);
       return { path: "/messages", body, contentType: "application/json" };
     }
@@ -62,10 +68,84 @@ export function buildProviderRequest(params: {
       const model = providerModel.replace(/^models\//, "");
       const action = params.geminiStream ? "streamGenerateContent" : "generateContent";
       const suffix = params.geminiStream ? "?alt=sse" : "";
+      // 过滤空文本内容块
+      sanitizeGeminiContents(json);
       return { path: `/models/${encodeURIComponent(model)}:${action}${suffix}`, body: JSON.stringify(json), contentType: "application/json" };
     }
     default:
       throw new Error("unknown provider");
+  }
+}
+
+/**
+ * 过滤消息中的空文本内容块，避免 AWS Bedrock 等 API 报错
+ * "text content blocks must be non-empty"
+ */
+function sanitizeMessages(json: Record<string, unknown>, field: string) {
+  const messages = json[field];
+  if (!Array.isArray(messages)) return;
+
+  for (const msg of messages) {
+    if (!msg || typeof msg !== "object") continue;
+    const content = (msg as Record<string, unknown>)["content"];
+
+    // 如果 content 是字符串且为空，设为单个空格（保持结构有效）
+    if (typeof content === "string") {
+      if (content.trim() === "") {
+        (msg as Record<string, unknown>)["content"] = " ";
+      }
+      continue;
+    }
+
+    // 如果 content 是数组，过滤空的 text 块
+    if (Array.isArray(content)) {
+      const filtered = content.filter((part) => {
+        if (!part || typeof part !== "object") return true;
+        const p = part as Record<string, unknown>;
+        // 过滤空的 text 类型块
+        if (p["type"] === "text" && typeof p["text"] === "string") {
+          return p["text"].trim() !== "";
+        }
+        return true;
+      });
+      // 如果过滤后为空数组，添加一个占位文本
+      if (filtered.length === 0) {
+        (msg as Record<string, unknown>)["content"] = [{ type: "text", text: " " }];
+      } else {
+        (msg as Record<string, unknown>)["content"] = filtered;
+      }
+    }
+  }
+}
+
+/**
+ * 过滤 Gemini 格式的空文本内容块
+ */
+function sanitizeGeminiContents(json: Record<string, unknown>) {
+  const contents = json["contents"];
+  if (!Array.isArray(contents)) return;
+
+  for (const content of contents) {
+    if (!content || typeof content !== "object") continue;
+    const parts = (content as Record<string, unknown>)["parts"];
+    if (!Array.isArray(parts)) continue;
+
+    const filtered = parts.filter((part) => {
+      if (!part || typeof part !== "object") return true;
+      const p = part as Record<string, unknown>;
+      // 过滤只有空 text 的块
+      if ("text" in p && typeof p["text"] === "string" && Object.keys(p).length === 1) {
+        return p["text"].trim() !== "";
+      }
+      return true;
+    });
+
+    // 如果过滤后为空数组，添加一个占位文本
+    if (filtered.length === 0) {
+      (content as Record<string, unknown>)["parts"] = [{ text: " " }];
+    } else {
+      (content as Record<string, unknown>)["parts"] = filtered;
+    }
   }
 }
 

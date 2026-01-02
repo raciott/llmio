@@ -8,6 +8,7 @@ export interface Provider {
   Type: string;
   Config: string;
   Console: string;
+  RpmLimit: number; // 每分钟请求数限制，0 表示无限制
 }
 
 export interface Model {
@@ -143,6 +144,7 @@ export async function createProvider(provider: {
   type: string;
   config: string;
   console: string;
+  rpm_limit?: number;
 }): Promise<Provider> {
   return apiRequest<Provider>('/providers', {
     method: 'POST',
@@ -155,6 +157,7 @@ export async function updateProvider(id: number, provider: {
   type?: string;
   config?: string;
   console?: string;
+  rpm_limit?: number;
 }): Promise<Provider> {
   return apiRequest<Provider>(`/providers/${id}`, {
     method: 'PUT',
@@ -547,6 +550,84 @@ export async function cleanLogs(params: {
 // Test API functions
 export async function testCountTokens(): Promise<void> {
   return apiRequest<void>('/test/count_tokens');
+}
+
+// 健康检查 API（不需要认证，直接访问根路径）
+export interface ComponentStatus {
+  status: "healthy" | "degraded" | "unhealthy";
+  message?: string;
+  responseTimeMs?: number;
+}
+
+// 请求块状态（每个块代表一次请求）
+export interface ModelHealthRequestBlock {
+  success: boolean; // 请求是否成功
+  timestamp: string; // 请求时间（ISO 8601）
+}
+
+// 模型健康状态
+export interface ModelHealth {
+  modelName: string;
+  providerModel: string;
+  status: "healthy" | "degraded" | "unhealthy" | "unknown";
+  totalRequests: number;
+  failedRequests: number;
+  successRate: number; // 0-100 之间
+  avgResponseTimeMs: number;
+  lastCheck: string;
+  lastError?: string;
+  requestBlocks: ModelHealthRequestBlock[]; // 最近100次请求，从旧到新
+}
+
+export interface ProviderHealth {
+  id: number;
+  name: string;
+  type: string;
+  status: "healthy" | "degraded" | "unhealthy" | "unknown";
+  lastCheck: string;
+  responseTimeMs: number;
+  errorRate: number;
+  totalRequests: number;
+  failedRequests: number;
+  lastError?: string;
+  models: ModelHealth[]; // 该提供商下的模型列表
+}
+
+export interface SystemHealth {
+  status: "healthy" | "degraded" | "unhealthy";
+  timestamp: string;
+  uptime: number; // 总运行时间（秒），基于首次部署时间
+  processUptime: number; // 当前进程运行时间（秒）
+  firstDeployTime: string; // 首次部署时间（ISO 8601）
+  components: {
+    database: ComponentStatus;
+    redis: ComponentStatus;
+    providers: {
+      status: "healthy" | "degraded" | "unhealthy";
+      total: number;
+      healthy: number;
+      degraded: number;
+      unhealthy: number;
+      details: ProviderHealth[];
+    };
+  };
+}
+
+export async function getSystemHealthDetail(timeWindowMinutes?: number): Promise<SystemHealth> {
+  const params = timeWindowMinutes ? `?window=${timeWindowMinutes}` : "";
+  const response = await fetch(`/api/health/detail${params}`);
+  if (!response.ok) {
+    throw new Error(`健康检查失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getPrometheusMetrics(): Promise<string> {
+  const response = await fetch("/api/metrics");
+  if (!response.ok) {
+    throw new Error(`获取指标失败: ${response.status}`);
+  }
+  return response.text();
 }
 
 // GitHub Release API

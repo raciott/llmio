@@ -32,6 +32,7 @@ function toProviderDto(row: any) {
     Type: String(row.type ?? ""),
     Config: String(row.config ?? ""),
     Console: String(row.console ?? ""),
+    RpmLimit: Number(row.rpm_limit ?? 0),
   };
 }
 
@@ -221,7 +222,7 @@ apiRoutes.get("/providers", async (c) => {
     }
 
     const result = await c.env.db.query(
-      `SELECT id, name, type, config, console FROM providers WHERE ${where.join(" AND ")} ORDER BY id DESC`,
+      `SELECT id, name, type, config, console, rpm_limit FROM providers WHERE ${where.join(" AND ")} ORDER BY id DESC`,
       args
     );
     return success(c, (result.rows ?? []).map(toProviderDto));
@@ -250,7 +251,7 @@ apiRoutes.get("/providers/models/:id", async (c) => {
 
 apiRoutes.post("/providers", async (c) => {
   try {
-    const body = (await c.req.json()) as { name?: string; type?: string; config?: string; console?: string };
+    const body = (await c.req.json()) as { name?: string; type?: string; config?: string; console?: string; rpm_limit?: number };
     if (!body?.name || !body?.type || body.config === undefined) return badRequest(c, "Invalid request body");
 
     const existing = await c.env.db.query<{ id: number }>(
@@ -260,13 +261,14 @@ apiRoutes.post("/providers", async (c) => {
     if (existing.rows.length > 0) return badRequest(c, "Provider already exists");
 
     const now = new Date().toISOString();
+    const rpmLimit = Number(body.rpm_limit ?? 0);
     const result = await c.env.db.query<{ id: number }>(
-      "INSERT INTO providers (name, type, config, console, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-      [body.name, body.type, body.config, body.console ?? "", now, now]
+      "INSERT INTO providers (name, type, config, console, rpm_limit, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+      [body.name, body.type, body.config, body.console ?? "", rpmLimit, now, now]
     );
     const id = result.rows[0]?.id ?? 0;
     await bumpNamespaceVersion(c.env, "providers");
-    return success(c, toProviderDto({ id, name: body.name, type: body.type, config: body.config, console: body.console ?? "" }));
+    return success(c, toProviderDto({ id, name: body.name, type: body.type, config: body.config, console: body.console ?? "", rpm_limit: rpmLimit }));
   } catch (e) {
     return internalServerError(c, `Failed to create provider: ${(e as Error).message}`);
   }
@@ -276,7 +278,7 @@ apiRoutes.put("/providers/:id", async (c) => {
   const id = Number.parseInt(c.req.param("id") ?? "", 10);
   if (!Number.isFinite(id)) return badRequest(c, "Invalid ID format");
   try {
-    const body = (await c.req.json()) as { name?: string; type?: string; config?: string; console?: string };
+    const body = (await c.req.json()) as { name?: string; type?: string; config?: string; console?: string; rpm_limit?: number };
     if (!body?.name || !body?.type || body.config === undefined) return badRequest(c, "Invalid request body");
 
     const existing = await c.env.db.query<{ id: number }>(
@@ -286,12 +288,13 @@ apiRoutes.put("/providers/:id", async (c) => {
     if (existing.rows.length === 0) return notFound(c, "Provider not found");
 
     const now = new Date().toISOString();
+    const rpmLimit = Number(body.rpm_limit ?? 0);
     await c.env.db.query(
-      "UPDATE providers SET name = $1, type = $2, config = $3, console = $4, updated_at = $5 WHERE id = $6",
-      [body.name, body.type, body.config, body.console ?? "", now, id]
+      "UPDATE providers SET name = $1, type = $2, config = $3, console = $4, rpm_limit = $5, updated_at = $6 WHERE id = $7",
+      [body.name, body.type, body.config, body.console ?? "", rpmLimit, now, id]
     );
     await bumpNamespaceVersion(c.env, "providers");
-    return success(c, toProviderDto({ id, name: body.name, type: body.type, config: body.config, console: body.console ?? "" }));
+    return success(c, toProviderDto({ id, name: body.name, type: body.type, config: body.config, console: body.console ?? "", rpm_limit: rpmLimit }));
   } catch (e) {
     return internalServerError(c, `Failed to update provider: ${(e as Error).message}`);
   }

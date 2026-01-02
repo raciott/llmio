@@ -8,6 +8,7 @@ import { Toaster } from './components/ui/sonner';
 // 懒加载路由组件
 const Layout = lazy(() => import('./routes/layout'));
 const Home = lazy(() => import('./routes/home'));
+const HealthPage = lazy(() => import('./routes/health'));
 const ProvidersPage = lazy(() => import('./routes/providers'));
 const ModelsPage = lazy(() => import('./routes/models'));
 const ModelProvidersPage = lazy(() => import('./routes/model-providers'));
@@ -34,6 +35,7 @@ function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<Layout />}>
                 <Route index element={<Home />} />
+                <Route path="health" element={<HealthPage />} />
                 <Route path="providers" element={<ProvidersPage />} />
                 <Route path="models" element={<ModelsPage />} />
                 <Route path="model-providers" element={<ModelProvidersPage />} />
