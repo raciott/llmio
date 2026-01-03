@@ -25,8 +25,6 @@ type Props = {
 const BASE_DEFAULT_ITEMS: Omit<ConfigItem, "id">[] = [
 	{ key: "base_url", type: "string", value: "", locked: true },
 	{ key: "api_key", type: "string", value: "", locked: true },
-	{ key: "weight", type: "number", value: "1", locked: true },
-	{ key: "enabled", type: "boolean", value: "true", locked: true },
 ];
 
 function defaultItemsByType(providerType?: string): Omit<ConfigItem, "id">[] {
@@ -83,13 +81,7 @@ function normalizeJsonToItems(raw: string, defaults: Omit<ConfigItem, "id">[]): 
 		for (const item of baseItems) {
 			if (!Object.prototype.hasOwnProperty.call(parsed, item.key)) continue;
 			const v = (parsed as Record<string, unknown>)[item.key];
-			if (item.key === "enabled") {
-				item.type = "boolean";
-				item.value = String(Boolean(v));
-			} else if (item.key === "weight") {
-				item.type = "number";
-				item.value = String(typeof v === "number" ? v : Number(v));
-			} else if (item.key === "version") {
+			if (item.key === "version") {
 				item.type = "string";
 				item.value = String(v ?? "");
 			} else {

@@ -221,9 +221,9 @@ export default function ModelsPage() {
       remark: model.Remark,
       max_retry: model.MaxRetry,
       time_out: model.TimeOut,
-      io_log: model.IOLog,
+      io_log: Boolean(model.IOLog),
       strategy: model.Strategy === "rotor" ? "rotor" : "lottery",
-      breaker: model.Breaker ?? false,
+      breaker: Boolean(model.Breaker),
     });
     setOpen(true);
   };
@@ -584,8 +584,8 @@ export default function ModelsPage() {
                     </div>
                     <FormControl>
                       <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
+                        checked={field.value === true}
+                        onCheckedChange={(checked) => field.onChange(checked === true)}
                       />
                     </FormControl>
                   </FormItem>
@@ -601,7 +601,10 @@ export default function ModelsPage() {
                       <FormLabel className="text-base">熔断</FormLabel>
                     </div>
                     <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                      <Checkbox
+                        checked={field.value === true}
+                        onCheckedChange={(checked) => field.onChange(checked === true)}
+                      />
                     </FormControl>
                   </FormItem>
                 )}

@@ -87,6 +87,7 @@ const formSchema = z.object({
   config: z.string().min(1, { message: "配置不能为空" }),
   console: z.string().optional(),
   rpmLimit: z.number().min(0, { message: "RPM 限制必须大于等于 0" }).optional(),
+  ipLockMinutes: z.number().min(0, { message: "IP 锁定时间必须大于等于 0" }).optional(),
 });
 
 export default function ProvidersPage() {
@@ -112,7 +113,7 @@ export default function ProvidersPage() {
   // 初始化表单
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", type: "", config: "", console: "", rpmLimit: 0 },
+    defaultValues: { name: "", type: "", config: "", console: "", rpmLimit: 0, ipLockMinutes: 0 },
   });
   const selectedProviderType = form.watch("type");
 
@@ -250,11 +251,12 @@ export default function ProvidersPage() {
         type: values.type,
         config: values.config,
         console: values.console || "",
-        rpm_limit: values.rpmLimit || 0
+        rpm_limit: values.rpmLimit || 0,
+        ip_lock_minutes: values.ipLockMinutes || 0
       });
       setOpen(false);
       toast.success(`提供商 ${values.name} 创建成功`);
-      form.reset({ name: "", type: "", config: "", console: "", rpmLimit: 0 });
+      form.reset({ name: "", type: "", config: "", console: "", rpmLimit: 0, ipLockMinutes: 0 });
       fetchProviders();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -271,12 +273,13 @@ export default function ProvidersPage() {
         type: values.type,
         config: values.config,
         console: values.console || "",
-        rpm_limit: values.rpmLimit || 0
+        rpm_limit: values.rpmLimit || 0,
+        ip_lock_minutes: values.ipLockMinutes || 0
       });
       setOpen(false);
       toast.success(`提供商 ${values.name} 更新成功`);
       setEditingProvider(null);
-      form.reset({ name: "", type: "", config: "", console: "", rpmLimit: 0 });
+      form.reset({ name: "", type: "", config: "", console: "", rpmLimit: 0, ipLockMinutes: 0 });
       fetchProviders();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -309,6 +312,7 @@ export default function ProvidersPage() {
       config: provider.Config,
       console: provider.Console || "",
       rpmLimit: provider.RpmLimit || 0,
+      ipLockMinutes: provider.IpLockMinutes || 0,
     });
     setOpen(true);
   };
@@ -415,6 +419,8 @@ export default function ProvidersPage() {
                       <TableHead>类型</TableHead>
                       <TableHead>配置</TableHead>
                       <TableHead>控制台</TableHead>
+                      <TableHead>RPM限制</TableHead>
+                      <TableHead>IP锁定(分钟)</TableHead>
                       <TableHead>操作</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -442,6 +448,20 @@ export default function ProvidersPage() {
                               <ExternalLink className="h-2 w-2 opacity-50" />
                             </Button>
                           )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center">
+                            <span className={`text-sm font-medium ${provider.RpmLimit > 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                              {provider.RpmLimit > 0 ? provider.RpmLimit : '无限制'}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center">
+                            <span className={`text-sm font-medium ${provider.IpLockMinutes > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                              {provider.IpLockMinutes > 0 ? `${provider.IpLockMinutes}分钟` : '不锁定'}
+                            </span>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-2">
@@ -500,9 +520,21 @@ export default function ProvidersPage() {
                           </Button>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-[11px] text-muted-foreground">ID: {provider.ID}</p>
                         <p className="text-[11px] text-muted-foreground">类型: {provider.Type || "未知"}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap mt-1">
+                        <p className="text-[11px] text-muted-foreground">
+                          RPM: <span className={`font-medium ${provider.RpmLimit > 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                            {provider.RpmLimit > 0 ? provider.RpmLimit : '无限制'}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          IP锁定: <span className={`font-medium ${provider.IpLockMinutes > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            {provider.IpLockMinutes > 0 ? `${provider.IpLockMinutes}分钟` : '不锁定'}
+                          </span>
+                        </p>
                       </div>
                     </div>
                     <div className="flex flex-wrap justify-end gap-1.5">
@@ -694,6 +726,29 @@ export default function ProvidersPage() {
                     </FormControl>
                     <p className="text-xs text-muted-foreground">
                       每分钟最大请求数，0 表示无限制。达到限制后会自动切换到其他供应商。
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="ipLockMinutes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>IP 锁定时间（分钟）</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder="0 表示不锁定"
+                        value={field.value ?? 0}
+                        onChange={(e) => field.onChange(Number(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">
+                      IP锁定时间，0 表示不启用。启用后在指定时间内只允许首次访问的IP继续访问。
                     </p>
                     <FormMessage />
                   </FormItem>

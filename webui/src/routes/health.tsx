@@ -39,6 +39,15 @@ const formatUptime = (seconds: number): string => {
   return `${minutes}分钟`;
 };
 
+// 基于后端返回的 firstDeployTime 计算系统运行时间（秒）。
+// 优先使用后端的时间戳，避免本地时钟偏差影响显示。
+const calcUptimeFromFirstDeployTime = (health: SystemHealth): number => {
+  const base = Date.parse(health.firstDeployTime);
+  const now = Date.parse(health.timestamp);
+  if (Number.isNaN(base) || Number.isNaN(now)) return health.uptime;
+  return Math.max(0, Math.floor((now - base) / 1000));
+};
+
 // 格式化响应时间
 const formatResponseTime = (ms: number): string => {
   if (ms < 1) return "< 1ms";
@@ -280,7 +289,7 @@ export default function HealthPage() {
               <StatusBadge status={health.status} />
             </div>
             <CardDescription>
-              最后更新: {new Date(health.timestamp).toLocaleString('zh-CN')} · 系统运行: {formatUptime(health.uptime)} · 本次启动: {formatUptime(health.processUptime)}
+              最后更新: {new Date(health.timestamp).toLocaleString('zh-CN')} · 系统运行: {formatUptime(calcUptimeFromFirstDeployTime(health))} · 本次启动: {formatUptime(health.processUptime)}
             </CardDescription>
           </CardHeader>
           <CardContent>

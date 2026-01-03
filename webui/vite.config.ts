@@ -13,7 +13,6 @@ export default defineConfig({
 
   },
   build: {
-    outDir: '../llmio-node/public',
     emptyOutDir: true,
     chunkSizeWarningLimit: 1000,
     rollupOptions: {

@@ -72,7 +72,7 @@ export function ChartPieDonutText({ data }: ChartPieDonutTextProps) {
       <CardContent className="flex-1 pb-0">
         <ChartContainer
           config={chartConfig}
-          className="mx-auto aspect-square max-h-[500px] sm:max-h-[390px] pb-0"
+          className="mx-auto aspect-square max-h-[350px] pb-0"
         >
           <PieChart>
             <ChartTooltip

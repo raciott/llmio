@@ -1,14 +1,9 @@
 .openmcp
 .claude
 .idea
-llmio.db
-llmio-bun
+.env
 db
 
-llmio-node/.env
-llmio-node/node_modules
-llmio-node/public
-llmio-node/dist
 webui/dist
 webui/node_modules
 

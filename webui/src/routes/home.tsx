@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense, lazy, memo, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ToggleCard } from "@/components/ui/toggle-card";
 import Loading from "@/components/loading";
 import {
   getMetrics,
@@ -187,31 +188,75 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Suspense fallback={<div className="h-64 flex items-center justify-center">
-                <Loading message="加载图表..." />
-              </div>}>
-                <ChartPieDonutText data={modelCounts} />
-              </Suspense>
+              {/* 模型统计卡片 - 占比和排行切换 */}
+              <div className="space-y-4">
+                <ToggleCard
+                  title="模型调用统计"
+                  description="模型使用情况分析"
+                  options={[
+                    { key: "pie", label: "占比", description: "查看模型调用占比分布" },
+                    { key: "ranking", label: "排行", description: "查看模型调用排行榜" }
+                  ]}
+                  defaultOption="pie"
+                  contentOnly
+                >
+                  {(activeOption, toggleButtons) => (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">模型调用统计</h3>
+                          <p className="text-sm text-muted-foreground">模型使用情况分析</p>
+                        </div>
+                        {toggleButtons}
+                      </div>
+                      <Suspense fallback={<div className="h-64 flex items-center justify-center">
+                        <Loading message="加载图表..." />
+                      </div>}>
+                        {activeOption === "pie" ? (
+                          <ChartPieDonutText data={modelCounts} />
+                        ) : (
+                          <ModelRankingChart data={modelCounts} />
+                        )}
+                      </Suspense>
+                    </div>
+                  )}
+                </ToggleCard>
+              </div>
 
-              <Suspense fallback={<div className="h-64 flex items-center justify-center">
-                <Loading message="加载图表..." />
-              </div>}>
-                <ProjectChartPieDonutText data={projectCounts} />
-              </Suspense>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Suspense fallback={<div className="h-64 flex items-center justify-center">
-                <Loading message="加载图表..." />
-              </div>}>
-                <ModelRankingChart data={modelCounts} />
-              </Suspense>
-
-              <Suspense fallback={<div className="h-64 flex items-center justify-center">
-                <Loading message="加载图表..." />
-              </div>}>
-                <ProjectRankingChart data={projectCounts} />
-              </Suspense>
+              {/* 项目统计卡片 - 占比和排行切换 */}
+              <div className="space-y-4">
+                <ToggleCard
+                  title="项目调用统计"
+                  description="项目使用情况分析"
+                  options={[
+                    { key: "pie", label: "占比", description: "查看项目调用占比分布" },
+                    { key: "ranking", label: "排行", description: "查看项目调用排行榜" }
+                  ]}
+                  defaultOption="pie"
+                  contentOnly
+                >
+                  {(activeOption, toggleButtons) => (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">项目调用统计</h3>
+                          <p className="text-sm text-muted-foreground">项目使用情况分析</p>
+                        </div>
+                        {toggleButtons}
+                      </div>
+                      <Suspense fallback={<div className="h-64 flex items-center justify-center">
+                        <Loading message="加载图表..." />
+                      </div>}>
+                        {activeOption === "pie" ? (
+                          <ProjectChartPieDonutText data={projectCounts} />
+                        ) : (
+                          <ProjectRankingChart data={projectCounts} />
+                        )}
+                      </Suspense>
+                    </div>
+                  )}
+                </ToggleCard>
+              </div>
             </div>
           </div>
         )}

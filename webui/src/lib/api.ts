@@ -9,6 +9,7 @@ export interface Provider {
   Config: string;
   Console: string;
   RpmLimit: number; // 每分钟请求数限制，0 表示无限制
+  IpLockMinutes: number; // IP 锁定时间（分钟），0 表示不锁定
 }
 
 export interface Model {
@@ -17,9 +18,11 @@ export interface Model {
   Remark: string;
   MaxRetry: number;
   TimeOut: number;
-  IOLog: boolean;
+  // 后端当前返回为 0/1（对应 models.io_log）
+  IOLog: number;
   Strategy: string;
-  Breaker?: boolean | null;
+  // 后端当前返回为 0/1（对应 models.breaker）
+  Breaker?: number | null;
 }
 
 export interface ModelWithProvider {
@@ -145,6 +148,7 @@ export async function createProvider(provider: {
   config: string;
   console: string;
   rpm_limit?: number;
+  ip_lock_minutes?: number;
 }): Promise<Provider> {
   return apiRequest<Provider>('/providers', {
     method: 'POST',
@@ -158,6 +162,7 @@ export async function updateProvider(id: number, provider: {
   config?: string;
   console?: string;
   rpm_limit?: number;
+  ip_lock_minutes?: number;
 }): Promise<Provider> {
   return apiRequest<Provider>(`/providers/${id}`, {
     method: 'PUT',

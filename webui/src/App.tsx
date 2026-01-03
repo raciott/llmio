@@ -35,7 +35,7 @@ function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<Layout />}>
                 <Route index element={<Home />} />
-                <Route path="health" element={<HealthPage />} />
+                <Route path="health-ui" element={<HealthPage />} />
                 <Route path="providers" element={<ProvidersPage />} />
                 <Route path="models" element={<ModelsPage />} />
                 <Route path="model-providers" element={<ModelProvidersPage />} />

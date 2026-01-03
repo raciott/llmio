@@ -71,7 +71,7 @@ export function ModelRankingChart({ data }: ModelRankingChartProps) {
         <CardTitle>模型调用排行</CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="aspect-auto h-[320px] w-full">
+        <ChartContainer config={chartConfig} className="aspect-auto h-[350px] w-full">
           <BarChart
             accessibilityLayer
             data={chartData}
