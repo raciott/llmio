@@ -11,7 +11,9 @@ import (
 var DB *gorm.DB
 
 // Init 初始化数据库连接
-// dsn 格式: host=localhost user=postgres password=123456 dbname=llmio port=5432 sslmode=disable
+// dsn 支持两种格式：
+// 1) key=value DSN: host=localhost user=postgres password=postgres dbname=llmio port=5432 sslmode=disable
+// 2) URL: postgres://postgres:postgres@localhost:5432/llmio?sslmode=disable
 // 注意: 表结构由 schema.sql 管理，请先执行 psql -d llmio -f schema.sql
 func Init(ctx context.Context, dsn string) {
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})

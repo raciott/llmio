@@ -1,10 +1,10 @@
 # llmio
 
-LLM API 网关，支持 OpenAI、Anthropic、Gemini 协议的统一代理和管理。
+LLM API 网关（Go + Gin），支持 OpenAI、Anthropic、Gemini 协议的统一代理与管理，并提供 WebUI 管理界面。
 
 ## 项目结构
 
-- `llmio-node/`：Node.js 后端服务（Hono + PostgreSQL + Redis）
+- `main.go`/`handler/`/`service/`：Go 后端服务
 - `webui/`：前端管理界面（Vite + React + shadcn/ui）
 
 ## 功能特性
@@ -20,77 +20,35 @@ LLM API 网关，支持 OpenAI、Anthropic、Gemini 协议的统一代理和管�
 
 ### 1. 环境要求
 
-- Node.js 18+
+- Go 1.25+
 - PostgreSQL 14+
-- Redis（可选，用于缓存和日志队列）
-- pnpm
+- Redis（可选，用于 RPM 限流和 IP 锁定）
 
-### 2. 安装依赖
+### 2. 配置环境变量
 
-```bash
-# 后端
-cd llmio-node
-pnpm install
-
-# 前端
-cd ../webui
-pnpm install
-```
-
-### 3. 配置环境变量
+复制并编辑根目录的 `.env`：
 
 ```bash
-cd llmio-node
 cp .env.example .env
 ```
 
-编辑 `.env` 文件：
+PostgreSQL 推荐使用 URL 形式（更直观，也和 Redis 一致）：
 
 ```env
-# 服务器配置
-PORT=7070
-HOST=0.0.0.0
-
-# 静态资源目录（前端构建产物）
-STATIC_DIR=./dist
-
-# 管理员 API Key
-API_KEY=sk-your-admin-key
-
-# PostgreSQL 配置
-DATABASE_URL=postgresql://user:password@localhost:5432/llmio
-
-# Redis 配置（可选）
-REDIS_URL=redis://:password@localhost:6379
-REDIS_PREFIX=llmio
-REDIS_DEFAULT_TTL_SECONDS=1800
+DATABASE_DSN=postgres://postgres:postgres@localhost:5432/llmio?sslmode=disable
 ```
 
-### 4. 初始化数据库
+其中 Redis 推荐使用标准 URL 格式（你提到的传统写法）：
+
+```env
+REDIS_URL=redis://localhost:6379/0
+```
+
+### 3. 启动
 
 ```bash
-# 连接 PostgreSQL 执行建表脚本
-psql $DATABASE_URL < schema.sql
+go run .
 ```
-
-### 5. 构建前端
-
-```bash
-cd webui
-pnpm build
-
-# 复制构建产物到后端
-cp -r dist ../llmio-node/
-```
-
-### 6. 启动服务
-
-```bash
-cd llmio-node
-pnpm run dev
-```
-
-访问 `http://localhost:7070/login`，使用 `API_KEY` 登录管理界面。
 
 ## API 端点
 
@@ -130,15 +88,14 @@ curl "http://localhost:7070/gemini/v1beta/models/gemini-pro:generateContent?key=
 
 ```bash
 # 后端开发模式
-cd llmio-node
-pnpm run dev
+go run .
 
 # 前端开发模式（另开终端）
-cd webui
-pnpm dev
+npm -C webui install
+npm -C webui run dev
 ```
 
-前端开发服务器会自动代理 `/api` 请求到 `http://localhost:7070`。
+前端开发服务器会通过 `/api` 访问后端接口（确保后端已启动在 `7070`）。
 
 ## License
 

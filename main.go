@@ -29,10 +29,12 @@ func init() {
 	_ = godotenv.Load()
 
 	ctx := context.Background()
-	// PostgreSQL DSN 格式: host=localhost user=postgres password=123456 dbname=llmio port=5432 sslmode=disable
+	// PostgreSQL 连接串支持两种格式：
+	// 1) key=value DSN: host=localhost user=postgres password=postgres dbname=llmio port=5432 sslmode=disable
+	// 2) URL: postgres://postgres:postgres@localhost:5432/llmio?sslmode=disable
 	dsn := os.Getenv("DATABASE_DSN")
 	if dsn == "" {
-		dsn = "host=localhost user=postgres password=postgres dbname=llmio port=5432 sslmode=disable"
+		dsn = "postgres://postgres:postgres@localhost:5432/llmio?sslmode=disable"
 	}
 	models.Init(ctx, dsn)
 
