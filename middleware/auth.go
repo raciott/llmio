@@ -60,8 +60,15 @@ func AuthOpenAI(adminToken string) gin.HandlerFunc {
 // 用于Anthropic接口鉴权
 func AuthAnthropic(adminToken string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("x-api-key")
-		checkAuthKey(c, authHeader, adminToken)
+		key := strings.TrimSpace(c.GetHeader("x-api-key"))
+		if key == "" {
+			authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				key = parts[1]
+			}
+		}
+		checkAuthKey(c, key, adminToken)
 	}
 }
 

@@ -32,6 +32,8 @@ func (a *Anthropic) BuildReq(ctx context.Context, header http.Header, model stri
 	}
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("x-api-key", a.APIKey)
+	// 兼容部分上游（或网关）仅识别 Authorization: Bearer <key>
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.APIKey))
 	req.Header.Set("anthropic-version", a.Version)
 	return req, nil
 }
@@ -57,6 +59,7 @@ func (a *Anthropic) Models(ctx context.Context) ([]Model, error) {
 	}
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("x-api-key", a.APIKey)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.APIKey))
 	req.Header.Set("anthropic-version", a.Version)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -92,6 +95,7 @@ func (a *Anthropic) BuildCountTokensReq(ctx context.Context, header http.Header,
 	}
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("x-api-key", a.APIKey)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.APIKey))
 	req.Header.Set("anthropic-version", a.Version)
 	return req, nil
 }

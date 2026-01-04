@@ -50,6 +50,33 @@ REDIS_URL=redis://localhost:6379/0
 go run .
 ```
 
+## Docker 部署
+
+构建镜像：
+
+```bash
+docker build -t llmio:latest .
+```
+
+启动容器（示例）：
+
+```bash
+docker run --rm -p 7070:7070 \
+  -e "LLMIO_SERVER_PORT=7070" \
+  -e "TOKEN=your_token_here" \
+  -e "DATABASE_DSN=postgres://postgres:postgres@host.docker.internal:5432/llmio?sslmode=disable" \
+  -e "REDIS_URL=redis://host.docker.internal:6379/0" \
+  llmio:latest
+```
+
+必需环境变量：
+- `DATABASE_DSN`：PostgreSQL 连接串（推荐 URL 形式）
+- `TOKEN`：管理端与代理接口鉴权 Token
+
+可选环境变量：
+- `REDIS_URL`：Redis URL（用于 RPM 限流与 IP 锁定；不配置则使用内存）
+- `LLMIO_SERVER_PORT`：服务端口（默认 `7070`）
+
 ## API 端点
 
 ### OpenAI 兼容
