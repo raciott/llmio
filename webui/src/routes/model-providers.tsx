@@ -561,10 +561,10 @@ export default function ModelProvidersPage() {
       model_id: association.ModelID,
       provider_name: association.ProviderModel,
       provider_id: association.ProviderID,
-      tool_call: association.ToolCall,
-      structured_output: association.StructuredOutput,
-      image: association.Image,
-      with_header: association.WithHeader,
+      tool_call: association.ToolCall === true,
+      structured_output: association.StructuredOutput === true,
+      image: association.Image === true,
+      with_header: association.WithHeader === true,
       weight: association.Weight,
       customer_headers: headerPairs.length ? headerPairs : [],
     });
@@ -1126,8 +1126,8 @@ export default function ModelProvidersPage() {
                     <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                       <FormControl>
                         <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
+                          checked={field.value === true}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
                         />
                       </FormControl>
                       <div className="space-y-1 leading-none">
@@ -1146,8 +1146,8 @@ export default function ModelProvidersPage() {
                     <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                       <FormControl>
                         <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
+                          checked={field.value === true}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
                         />
                       </FormControl>
                       <div className="space-y-1 leading-none">
@@ -1166,8 +1166,8 @@ export default function ModelProvidersPage() {
                     <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                       <FormControl>
                         <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
+                          checked={field.value === true}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
                         />
                       </FormControl>
                       <div className="space-y-1 leading-none">
@@ -1186,8 +1186,8 @@ export default function ModelProvidersPage() {
                     <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                       <FormControl>
                         <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
+                          checked={field.value === true}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
                         />
                       </FormControl>
                       <div className="space-y-1 leading-none">

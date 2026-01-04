@@ -222,8 +222,8 @@ export default function AuthKeysPage() {
     form.reset({
       name: key.Name,
       key: key.Key,
-      status: key.Status,
-      allow_all: key.AllowAll,
+      status: key.Status === true,
+      allow_all: key.AllowAll === true,
       models: key.Models ?? [],
       expires_at: key.ExpiresAt,
     });
@@ -491,7 +491,7 @@ export default function AuthKeysPage() {
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <Switch
-                                  checked={item.Status}
+                                  checked={item.Status === true}
                                   disabled={toggleDisabled}
                                   onCheckedChange={(checked) => handleToggleStatus(item, checked)}
                                 />
@@ -603,7 +603,7 @@ export default function AuthKeysPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{item.Status ? "启用" : "禁用"}</span>
                           <Switch
-                            checked={item.Status}
+                            checked={item.Status === true}
                             disabled={toggleDisabled}
                             onCheckedChange={(checked) => handleToggleStatus(item, checked)}
                             aria-label="切换启用状态"
@@ -714,7 +714,7 @@ export default function AuthKeysPage() {
                             <div className="flex items-center gap-2 text-sm">
                               <span className="text-muted-foreground">无限制</span>
                               <Checkbox
-                                checked={allowAllField.value}
+                                checked={allowAllField.value === true}
                                 onCheckedChange={(checked) => allowAllField.onChange(checked === true)}
                               />
                             </div>

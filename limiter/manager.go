@@ -3,6 +3,9 @@ package limiter
 import (
 	"context"
 	"log/slog"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -10,20 +13,36 @@ import (
 
 // Manager 限流管理器
 type Manager struct {
-	rpmLimiter  *RPMLimiter
-	ipLocker    *IPLocker
-	redisClient *redis.Client
-	enabled     bool
+	rpmLimiter   *RPMLimiter
+	ipLocker     *IPLocker
+	redisClient  *redis.Client
+	enabled      bool
+	redisTimeout time.Duration
 }
 
 // NewManager 创建新的限流管理器
 func NewManager(redisClient *redis.Client) *Manager {
-	return &Manager{
-		rpmLimiter:  NewRPMLimiter(redisClient),
-		ipLocker:    NewIPLocker(redisClient),
-		redisClient: redisClient,
-		enabled:     true,
+	redisTimeout := 300 * time.Millisecond
+	if v := os.Getenv("REDIS_OP_TIMEOUT_MS"); v != "" {
+		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+			redisTimeout = time.Duration(ms) * time.Millisecond
+		}
 	}
+	return &Manager{
+		rpmLimiter:   NewRPMLimiter(redisClient),
+		ipLocker:     NewIPLocker(redisClient),
+		redisClient:  redisClient,
+		enabled:      true,
+		redisTimeout: redisTimeout,
+	}
+}
+
+func (m *Manager) withRedisTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	// 内存模式不需要额外超时控制
+	if m.redisClient == nil {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, m.redisTimeout)
 }
 
 // SetEnabled 设置限流器是否启用
@@ -46,6 +65,8 @@ func (m *Manager) CheckRPMLimit(ctx context.Context, providerID uint, rpmLimit i
 	if !m.enabled {
 		return true, nil
 	}
+	ctx, cancel := m.withRedisTimeout(ctx)
+	defer cancel()
 	return m.rpmLimiter.CheckRPMLimit(ctx, providerID, rpmLimit)
 }
 
@@ -54,6 +75,8 @@ func (m *Manager) RecordRPMRequest(ctx context.Context, providerID uint) error {
 	if !m.enabled {
 		return nil
 	}
+	ctx, cancel := m.withRedisTimeout(ctx)
+	defer cancel()
 	return m.rpmLimiter.RecordRequest(ctx, providerID)
 }
 
@@ -62,6 +85,8 @@ func (m *Manager) CheckIPAccess(ctx context.Context, providerID uint, clientIP s
 	if !m.enabled {
 		return true, nil
 	}
+	ctx, cancel := m.withRedisTimeout(ctx)
+	defer cancel()
 	return m.ipLocker.CheckIPAccess(ctx, providerID, clientIP, lockMinutes)
 }
 
@@ -70,6 +95,8 @@ func (m *Manager) RecordIPAccess(ctx context.Context, providerID uint, clientIP 
 	if !m.enabled {
 		return nil
 	}
+	ctx, cancel := m.withRedisTimeout(ctx)
+	defer cancel()
 	return m.ipLocker.RecordIPAccess(ctx, providerID, clientIP, lockMinutes)
 }
 

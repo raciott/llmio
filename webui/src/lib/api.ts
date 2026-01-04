@@ -62,6 +62,58 @@ export interface AuthKey {
   LastUsedAt: string | null;
 }
 
+const toBoolean = (value: unknown): boolean => value === true || value === 1 || value === "1";
+
+const parseRecordStringString = (value: unknown): Record<string, string> => {
+  if (!value) return {};
+  if (typeof value === "object") return value as Record<string, string>;
+  if (typeof value !== "string") return {};
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (parsed && typeof parsed === "object") return parsed as Record<string, string>;
+    return {};
+  } catch {
+    return {};
+  }
+};
+
+const parseStringArray = (value: unknown): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter((v) => typeof v === "string");
+  if (typeof value !== "string") return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) return parsed.filter((v) => typeof v === "string");
+    return [];
+  } catch {
+    return [];
+  }
+};
+
+const normalizeAuthKey = (raw: any): AuthKey => {
+  const allowAll = toBoolean(raw?.AllowAll);
+  return {
+    ...raw,
+    Status: toBoolean(raw?.Status),
+    AllowAll: allowAll,
+    Models: allowAll ? [] : parseStringArray(raw?.Models),
+  } as AuthKey;
+};
+
+const normalizeModelWithProvider = (raw: any): ModelWithProvider => ({
+  ...raw,
+  ToolCall: toBoolean(raw?.ToolCall),
+  StructuredOutput: toBoolean(raw?.StructuredOutput),
+  Image: toBoolean(raw?.Image),
+  WithHeader: toBoolean(raw?.WithHeader),
+  Status: raw?.Status == null ? null : toBoolean(raw?.Status),
+  CustomerHeaders: parseRecordStringString(raw?.CustomerHeaders),
+});
+
 export interface SystemConfig {
   enable_smart_routing: boolean;
   success_rate_weight: number;
@@ -262,7 +314,11 @@ export async function getAuthKeys(params: {
   if (params.search) searchParams.append("search", params.search);
 
   const queryString = searchParams.toString();
-  return apiRequest<PaginatedResponse<AuthKey>>(queryString ? `/auth-keys?${queryString}` : "/auth-keys");
+  const res = await apiRequest<PaginatedResponse<any>>(queryString ? `/auth-keys?${queryString}` : "/auth-keys");
+  return {
+    ...res,
+    data: (res.data ?? []).map(normalizeAuthKey),
+  };
 }
 
 export interface AuthKeyItem {
@@ -275,17 +331,19 @@ export async function getAuthKeysList(): Promise<AuthKeyItem[]> {
 }
 
 export async function createAuthKey(payload: AuthKeyPayload): Promise<AuthKey> {
-  return apiRequest<AuthKey>("/auth-keys", {
+  const res = await apiRequest<any>("/auth-keys", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  return normalizeAuthKey(res);
 }
 
 export async function updateAuthKey(id: number, payload: AuthKeyPayload): Promise<AuthKey> {
-  return apiRequest<AuthKey>(`/auth-keys/${id}`, {
+  const res = await apiRequest<any>(`/auth-keys/${id}`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });
+  return normalizeAuthKey(res);
 }
 
 export async function deleteAuthKey(id: number): Promise<void> {
@@ -295,14 +353,16 @@ export async function deleteAuthKey(id: number): Promise<void> {
 }
 
 export async function toggleAuthKeyStatus(id: number): Promise<AuthKey> {
-  return apiRequest<AuthKey>(`/auth-keys/${id}/status`, {
+  const res = await apiRequest<any>(`/auth-keys/${id}/status`, {
     method: "PATCH",
   });
+  return normalizeAuthKey(res);
 }
 
 // Model-Provider API functions
 export async function getModelProviders(modelId: number): Promise<ModelWithProvider[]> {
-  return apiRequest<ModelWithProvider[]>(`/model-providers?model_id=${modelId}`);
+  const res = await apiRequest<any[]>(`/model-providers?model_id=${modelId}`);
+  return (res ?? []).map(normalizeModelWithProvider);
 }
 
 export async function getModelProviderStatus(providerId: number, modelName: string, providerModel: string): Promise<boolean[]> {
@@ -325,10 +385,11 @@ export async function createModelProvider(association: {
   customer_headers: Record<string, string>;
   weight: number;
 }): Promise<ModelWithProvider> {
-  return apiRequest<ModelWithProvider>('/model-providers', {
+  const res = await apiRequest<any>('/model-providers', {
     method: 'POST',
     body: JSON.stringify(association),
   });
+  return normalizeModelWithProvider(res);
 }
 
 export async function updateModelProvider(id: number, association: {
@@ -342,17 +403,19 @@ export async function updateModelProvider(id: number, association: {
   customer_headers?: Record<string, string>;
   weight?: number;
 }): Promise<ModelWithProvider> {
-  return apiRequest<ModelWithProvider>(`/model-providers/${id}`, {
+  const res = await apiRequest<any>(`/model-providers/${id}`, {
     method: 'PUT',
     body: JSON.stringify(association),
   });
+  return normalizeModelWithProvider(res);
 }
 
 export async function updateModelProviderStatus(id: number, status: boolean): Promise<ModelWithProvider> {
-  return apiRequest<ModelWithProvider>(`/model-providers/${id}/status`, {
+  const res = await apiRequest<any>(`/model-providers/${id}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });
+  return normalizeModelWithProvider(res);
 }
 
 export async function deleteModelProvider(id: number): Promise<void> {
@@ -467,16 +530,18 @@ export interface ChatLog {
   RemoteIP?: string;
   Error: string;
   Retry: number;
-  ProxyTime: number;
-  FirstChunkTime: number;
-  ChunkTime: number;
+  // 后端字段为毫秒（chat_logs.proxy_time_ms/first_chunk_time_ms/chunk_time_ms）
+  ProxyTimeMs: number;
+  FirstChunkTimeMs: number;
+  ChunkTimeMs: number;
   Tps: number;
   ChatIO: boolean;
   Size: number;
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
-  prompt_tokens_details: PromptTokensDetails;
+  // 后端存的是 JSON 字符串（或空字符串）；前端使用时需要做解析/兜底
+  prompt_tokens_details: PromptTokensDetails | string | null;
   key_name: string;
 }
 

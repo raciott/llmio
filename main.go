@@ -51,9 +51,19 @@ func init() {
 		if err != nil {
 			slog.Warn("Failed to parse Redis URL, using memory storage", "error", err)
 		} else {
+			// 限流相关 Redis 调用是“尽力而为”，不应阻塞主请求太久：缩短超时并关闭重试，避免网络抖动导致卡顿。
+			opt.MaxRetries = 0
+			opt.MinRetryBackoff = 0
+			opt.MaxRetryBackoff = 0
+			opt.DialTimeout = 1 * time.Second
+			opt.ReadTimeout = 1 * time.Second
+			opt.WriteTimeout = 1 * time.Second
+
 			redisClient = redis.NewClient(opt)
 			// 测试Redis连接
-			if err := redisClient.Ping(ctx).Err(); err != nil {
+			pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			if err := redisClient.Ping(pingCtx).Err(); err != nil {
 				slog.Warn("Redis connection failed, using memory storage", "error", err)
 				redisClient = nil
 			} else {

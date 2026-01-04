@@ -16,7 +16,8 @@ var singleFlightGroup singleflight.Group
 
 func GetAuthKey(ctx context.Context, key string) (*models.AuthKey, error) {
 	ch := singleFlightGroup.DoChan(key, func() (any, error) {
-		authKey, err := gorm.G[models.AuthKey](models.DB).Where("key = ?", key).Where("status = ?", true).First(ctx)
+		// auth_keys.status 在数据库中是 0/1（int），不能用 bool 参数查询
+		authKey, err := gorm.G[models.AuthKey](models.DB).Where("key = ?", key).Where("status = ?", 1).First(ctx)
 		return &authKey, err
 	})
 

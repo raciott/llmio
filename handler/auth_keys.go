@@ -69,9 +69,9 @@ func GetAuthKeys(c *gin.Context) {
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
 		switch status {
 		case "active":
-			query = query.Where("status = ?", true)
+			query = query.Where("status = ?", 1)
 		case "inactive":
-			query = query.Where("status = ?", false)
+			query = query.Where("status = ?", 0)
 		default:
 			common.BadRequest(c, "Invalid status filter")
 			return
@@ -82,9 +82,9 @@ func GetAuthKeys(c *gin.Context) {
 	if allowAll := strings.TrimSpace(c.Query("allow_all")); allowAll != "" {
 		switch allowAll {
 		case "true":
-			query = query.Where("allow_all = ?", true)
+			query = query.Where("allow_all = ?", 1)
 		case "false":
-			query = query.Where("allow_all = ?", false)
+			query = query.Where("allow_all = ?", 0)
 		default:
 			common.BadRequest(c, "Invalid allow_all filter")
 			return

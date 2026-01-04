@@ -19,6 +19,6 @@ const (
 )
 
 const (
-	KeyPrefix = "sk-github.com/atopos31/llmio-"
+	KeyPrefix = "sk-github.com/racio/llmio-"
 	KeyLength = 32
 )

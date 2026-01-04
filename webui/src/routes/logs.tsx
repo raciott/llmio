@@ -18,12 +18,34 @@ import Loading from "@/components/loading";
 import { getLogs, getProviders, getModelOptions, getAuthKeysList, type ChatLog, type Provider, type Model, type AuthKeyItem, getProviderTemplates, cleanLogs } from "@/lib/api";
 import { ChevronLeft, ChevronRight, RefreshCw, Trash2, Eye, EyeOff } from "lucide-react";
 
-// 格式化时间显示
-const formatTime = (nanoseconds: number): string => {
-  if (nanoseconds < 1000) return `${nanoseconds.toFixed(2)} ns`;
-  if (nanoseconds < 1000000) return `${(nanoseconds / 1000).toFixed(2)} μs`;
-  if (nanoseconds < 1000000000) return `${(nanoseconds / 1000000).toFixed(2)} ms`;
-  return `${(nanoseconds / 1000000000).toFixed(2)} s`;
+// 格式化耗时显示（后端字段单位为毫秒）
+const formatDurationMs = (milliseconds: number): string => {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "-";
+  if (milliseconds < 1000) return `${Math.round(milliseconds)} ms`;
+  if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(2)} s`;
+  const minutes = Math.floor(milliseconds / 60_000);
+  const seconds = Math.floor((milliseconds % 60_000) / 1000);
+  return `${minutes} 分 ${seconds} 秒`;
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+// 兼容不同字段命名（例如旧版前端/后端字段不一致时），统一得到毫秒数。
+const getLogDurationsMs = (log: ChatLog) => {
+  const raw = log as unknown as Record<string, unknown>;
+  const proxy = toFiniteNumber(raw.ProxyTimeMs) ?? toFiniteNumber(raw.proxy_time_ms) ?? toFiniteNumber(raw.ProxyTime) ?? 0;
+  const first = toFiniteNumber(raw.FirstChunkTimeMs) ?? toFiniteNumber(raw.first_chunk_time_ms) ?? toFiniteNumber(raw.FirstChunkTime) ?? 0;
+  const chunk = toFiniteNumber(raw.ChunkTimeMs) ?? toFiniteNumber(raw.chunk_time_ms) ?? toFiniteNumber(raw.ChunkTime) ?? 0;
+  return { proxy, first, chunk, total: proxy + first + chunk };
 };
 
 // 格式化字节大小显示
@@ -50,9 +72,23 @@ const DetailCard = ({ label, value, mono = false }: DetailCardProps) => (
   </div>
 );
 
-const formatDurationValue = (value?: number) => (typeof value === "number" ? formatTime(value) : "-");
+const formatDurationValue = (value?: number) => (typeof value === "number" ? formatDurationMs(value) : "-");
 const formatTokenValue = (value?: number) => (typeof value === "number" ? value.toLocaleString() : "-");
 const formatTpsValue = (value?: number) => (typeof value === "number" ? value.toFixed(2) : "-");
+
+const parsePromptTokensDetails = (value: ChatLog["prompt_tokens_details"]) => {
+  if (!value) return { cached_tokens: 0 };
+  if (typeof value === "object") return value as { cached_tokens: number };
+  if (typeof value !== "string") return { cached_tokens: 0 };
+  const trimmed = value.trim();
+  if (!trimmed) return { cached_tokens: 0 };
+  try {
+    const parsed = JSON.parse(trimmed) as { cached_tokens?: number };
+    return { cached_tokens: typeof parsed?.cached_tokens === "number" ? parsed.cached_tokens : 0 };
+  } catch {
+    return { cached_tokens: 0 };
+  }
+};
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<ChatLog[]>([]);
@@ -333,7 +369,7 @@ export default function LogsPage() {
                         <TableCell className="text-xs">
                           {log.Size ? formatBytes(log.Size) : '-'}
                         </TableCell>
-                        <TableCell>{formatTime(log.ChunkTime + log.FirstChunkTime + log.ProxyTime)}</TableCell>
+                        <TableCell>{formatDurationMs(getLogDurationsMs(log).total)}</TableCell>
                         <TableCell className="max-w-[120px] truncate text-xs" title={log.ProviderModel}>{log.ProviderModel}</TableCell>
                         <TableCell className="text-xs">{log.Style}</TableCell>
                         <TableCell className="text-xs">{log.ProviderName}</TableCell>
@@ -395,7 +431,7 @@ export default function LogsPage() {
                       </div>
                       <div className="space-y-1">
                         <p className="text-muted-foreground text-[10px] uppercase tracking-wide">耗时</p>
-                        <p className="font-medium">{formatTime(log.ChunkTime)}</p>
+                        <p className="font-medium">{formatDurationMs(getLogDurationsMs(log).chunk)}</p>
                       </div>
                       <div className="space-y-1">
                         <p className="text-muted-foreground text-[10px] uppercase tracking-wide">提供商</p>
@@ -508,20 +544,32 @@ export default function LogsPage() {
                 <div className="space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">性能指标</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <DetailCard label="代理耗时" value={formatDurationValue(selectedLog.ProxyTime)} />
-                    <DetailCard label="首包耗时" value={formatDurationValue(selectedLog.FirstChunkTime)} />
-                    <DetailCard label="完成耗时" value={formatDurationValue(selectedLog.ChunkTime)} />
+                    {(() => {
+                      const d = getLogDurationsMs(selectedLog);
+                      return (
+                        <>
+                          <DetailCard label="代理耗时" value={formatDurationValue(d.proxy)} />
+                          <DetailCard label="首包耗时" value={formatDurationValue(d.first)} />
+                          <DetailCard label="完成耗时" value={formatDurationValue(d.chunk)} />
+                        </>
+                      );
+                    })()}
                     <DetailCard label="TPS" value={formatTpsValue(selectedLog.Tps)} />
                   </div>
                 </div>
                 <div className="space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Token 使用</p>
+                  {(() => {
+                    const details = parsePromptTokensDetails(selectedLog.prompt_tokens_details);
+                    return (
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                     <DetailCard label="输入" value={formatTokenValue(selectedLog.prompt_tokens)} />
                     <DetailCard label="输出" value={formatTokenValue(selectedLog.completion_tokens)} />
                     <DetailCard label="总计" value={formatTokenValue(selectedLog.total_tokens)} />
-                    <DetailCard label="缓存" value={formatTokenValue(selectedLog.prompt_tokens_details.cached_tokens)} />
+                    <DetailCard label="缓存" value={formatTokenValue(details.cached_tokens)} />
                   </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

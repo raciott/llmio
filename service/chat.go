@@ -1,23 +1,73 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/racio/llmio/balancers"
 	"github.com/racio/llmio/consts"
 	"github.com/racio/llmio/models"
+	"github.com/racio/llmio/pkg"
 	"github.com/racio/llmio/providers"
 	"github.com/samber/lo"
 	"gorm.io/gorm"
 )
+
+func safeBodyTextForLog(res *http.Response, body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+
+	decoded := body
+	decodedLabel := ""
+
+	contentEncoding := strings.ToLower(strings.TrimSpace(res.Header.Get("Content-Encoding")))
+	isGzip := contentEncoding == "gzip" || (len(body) >= 2 && body[0] == 0x1f && body[1] == 0x8b)
+	if isGzip {
+		if zr, err := gzip.NewReader(bytes.NewReader(body)); err == nil {
+			if b, err := io.ReadAll(zr); err == nil {
+				decoded = b
+				decodedLabel = " (gzip 解压后)"
+			}
+			_ = zr.Close()
+		}
+	}
+
+	const maxBytes = 4096
+	truncated := false
+	totalBytes := len(decoded)
+	if totalBytes > maxBytes {
+		decoded = decoded[:maxBytes]
+		truncated = true
+	}
+
+	if utf8.Valid(decoded) {
+		text := string(decoded)
+		if truncated {
+			return fmt.Sprintf("%s%s...(已截断，总计 %d 字节)", text, decodedLabel, totalBytes)
+		}
+		return text + decodedLabel
+	}
+
+	// 非 UTF-8 内容：用 base64 保存（避免 PostgreSQL UTF8 编码错误）
+	b64 := base64.StdEncoding.EncodeToString(decoded)
+	if truncated {
+		return fmt.Sprintf("base64%s:%s...(已截断，总计 %d 字节)", decodedLabel, b64, totalBytes)
+	}
+	return fmt.Sprintf("base64%s:%s", decodedLabel, b64)
+}
 
 // BalanceChatWithLimiter 带限流功能的聊天负载均衡
 func BalanceChatWithLimiter(c *gin.Context, start time.Time, style string, before Before, providersWithMeta *ProvidersWithMeta, reqMeta models.ReqMeta) (*http.Response, *models.ChatLog, error) {
@@ -169,7 +219,7 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 				if err != nil {
 					slog.Error("read body error", "error", err)
 				}
-				retryLog <- log.WithError(fmt.Errorf("status: %d, body: %s", res.StatusCode, string(byteBody)))
+				retryLog <- log.WithError(fmt.Errorf("status: %d, body: %s", res.StatusCode, safeBodyTextForLog(res, byteBody)))
 
 				if res.StatusCode == http.StatusTooManyRequests {
 					// 达到RPM限制 降低权重
@@ -246,10 +296,33 @@ func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, pr
 }
 
 func SaveChatLog(ctx context.Context, log models.ChatLog) (uint, error) {
-	if err := gorm.G[models.ChatLog](models.DB).Create(ctx, &log); err != nil {
-		return 0, err
+	// chat_logs.uuid 在数据库中是 NOT NULL UNIQUE，必须保证每条记录都有唯一值。
+	if log.UUID == "" {
+		uuid, err := pkg.GenerateRandomCharsKey(36)
+		if err != nil {
+			return 0, err
+		}
+		log.UUID = uuid
 	}
-	return log.ID, nil
+
+	// 极低概率下可能发生 UUID 冲突；若命中唯一约束，生成新 UUID 后重试。
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := gorm.G[models.ChatLog](models.DB).Create(ctx, &log); err != nil {
+			// 兼容不同 driver 的错误类型：这里用 SQLSTATE 文本匹配，不引入额外依赖。
+			if strings.Contains(err.Error(), "SQLSTATE 23505") {
+				uuid, genErr := pkg.GenerateRandomCharsKey(36)
+				if genErr != nil {
+					return 0, genErr
+				}
+				log.UUID = uuid
+				continue
+			}
+			return 0, err
+		}
+		return log.ID, nil
+	}
+
+	return 0, errors.New("failed to generate unique chat log uuid")
 }
 
 func BuildHeaders(source http.Header, withHeader bool, customHeaders map[string]string, stream bool) http.Header {
@@ -301,18 +374,19 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 		return nil, err
 	}
 
-	modelWithProviderChain := gorm.G[models.ModelWithProvider](models.DB).Where("model_id = ?", model.ID).Where("status = ?", true)
+	// model_with_providers.status/tool_call/structured_output/image 在数据库中是 0/1（int）
+	modelWithProviderChain := gorm.G[models.ModelWithProvider](models.DB).Where("model_id = ?", model.ID).Where("status = ?", 1)
 
 	if before.toolCall {
-		modelWithProviderChain = modelWithProviderChain.Where("tool_call = ?", true)
+		modelWithProviderChain = modelWithProviderChain.Where("tool_call = ?", 1)
 	}
 
 	if before.structuredOutput {
-		modelWithProviderChain = modelWithProviderChain.Where("structured_output = ?", true)
+		modelWithProviderChain = modelWithProviderChain.Where("structured_output = ?", 1)
 	}
 
 	if before.image {
-		modelWithProviderChain = modelWithProviderChain.Where("image = ?", true)
+		modelWithProviderChain = modelWithProviderChain.Where("image = ?", 1)
 	}
 
 	modelWithProviders, err := modelWithProviderChain.Find(ctx)
