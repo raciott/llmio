@@ -3,7 +3,7 @@
 .idea
 .env
 db
-
+llmio
 webui/dist
 webui/node_modules
 

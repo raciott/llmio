@@ -134,7 +134,13 @@ const ModelHealthCard = ({ model }: { model: ModelHealth }) => {
 // 提供商卡片（可折叠）
 const ProviderCard = ({ provider }: { provider: ProviderHealth }) => {
   const [expanded, setExpanded] = useState(false); // 默认收起
-  const successRate = ((1 - provider.errorRate) * 100).toFixed(1);
+  // 后端返回的 errorRate 是百分比（0-100），这里做一次容错处理并转换为成功率百分比。
+  const successRate = (() => {
+    const raw = typeof provider.errorRate === "number" ? provider.errorRate : 0;
+    const errorRatePercent = raw <= 1 ? raw * 100 : raw;
+    const ok = Math.max(0, Math.min(100, 100 - errorRatePercent));
+    return ok.toFixed(1);
+  })();
 
   return (
     <Card>
