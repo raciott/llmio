@@ -687,7 +687,8 @@ export default function ProvidersPage() {
                       <ProviderConfigEditor value={field.value} onChange={handleStructuredConfigChange} providerType={selectedProviderType} />
                     ) : (
                       <FormControl>
-                        <Textarea {...field} className="resize-none whitespace-pre overflow-x-auto" />
+                        {/* 避免 api_key 等超长字段撑破弹窗宽度 */}
+                        <Textarea {...field} className="resize-none w-full max-w-full min-w-0 whitespace-pre-wrap break-all overflow-x-auto [field-sizing:fixed]" />
                       </FormControl>
                     )}
                     <FormMessage />

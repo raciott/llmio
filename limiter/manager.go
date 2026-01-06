@@ -144,7 +144,8 @@ func (m *Manager) CheckProviderLimits(ctx context.Context, c *gin.Context, provi
 		canProceed, err := m.CheckRPMLimit(ctx, providerID, rpmLimit)
 		if err != nil {
 			slog.Warn("RPM limit check failed", "provider_id", providerID, "error", err)
-			// RPM检查失败时允许通过，但记录警告
+			// 用户选择 fail-closed：限流依赖不可用时直接拒绝
+			return false, "limiter_unavailable", err
 		} else if !canProceed {
 			return false, "rpm_limit_exceeded", nil
 		}
@@ -156,7 +157,8 @@ func (m *Manager) CheckProviderLimits(ctx context.Context, c *gin.Context, provi
 		canAccess, err := m.CheckIPAccess(ctx, providerID, clientIP, ipLockMinutes)
 		if err != nil {
 			slog.Warn("IP lock check failed", "provider_id", providerID, "client_ip", clientIP, "error", err)
-			// IP检查失败时允许通过，但记录警告
+			// 用户选择 fail-closed：锁定依赖不可用时直接拒绝
+			return false, "limiter_unavailable", err
 		} else if !canAccess {
 			return false, "ip_access_denied", nil
 		}

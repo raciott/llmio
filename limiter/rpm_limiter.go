@@ -91,8 +91,8 @@ func (r *RPMLimiter) checkRPMLimitRedis(ctx context.Context, providerID uint, rp
 
 	_, err := pipe.Exec(ctx)
 	if err != nil {
-		// Redis出错时降级为允许
-		return true, fmt.Errorf("redis rpm check failed: %w", err)
+		// Redis 出错：由上层决定 fail-open / fail-closed，这里统一标记为不可用
+		return false, fmt.Errorf("%w: redis rpm check failed: %v", ErrLimiterUnavailable, err)
 	}
 
 	count := countCmd.Val()
@@ -116,7 +116,10 @@ func (r *RPMLimiter) recordRequestRedis(ctx context.Context, providerID uint, no
 	pipe.Expire(ctx, key, 2*time.Minute)
 
 	_, err := pipe.Exec(ctx)
-	return err
+	if err != nil {
+		return fmt.Errorf("%w: redis rpm record failed: %v", ErrLimiterUnavailable, err)
+	}
+	return nil
 }
 
 func (r *RPMLimiter) getCurrentRPMCountRedis(ctx context.Context, providerID uint, windowStart, now int64) (int, error) {
@@ -132,7 +135,7 @@ func (r *RPMLimiter) getCurrentRPMCountRedis(ctx context.Context, providerID uin
 
 	_, err := pipe.Exec(ctx)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%w: redis rpm count failed: %v", ErrLimiterUnavailable, err)
 	}
 
 	return int(countCmd.Val()), nil

@@ -245,7 +245,8 @@ export default function ProviderConfigEditor({ value, onChange, providerType }: 
 						lastEmittedRef.current = next;
 						onChange(next);
 					}}
-					className="resize-none whitespace-pre overflow-x-auto"
+					// api_key 等字段可能很长：避免 textarea 因内容过长撑破弹窗宽度
+					className="resize-none w-full max-w-full min-w-0 whitespace-pre-wrap break-all overflow-x-auto [field-sizing:fixed]"
 				/>
 			</div>
 		);
@@ -326,7 +327,8 @@ export default function ProviderConfigEditor({ value, onChange, providerType }: 
 								<Textarea
 									value={item.value}
 									onChange={(e) => updateItem(item.id, { value: e.target.value })}
-									className="resize-none whitespace-pre overflow-x-auto min-h-24"
+									// 避免长 JSON 行（例如 api_key）导致布局溢出
+									className="resize-none w-full max-w-full min-w-0 whitespace-pre-wrap break-all overflow-x-auto min-h-24 [field-sizing:fixed]"
 									placeholder='例如: {"foo":"bar"} 或 ["a","b"]'
 									aria-label="JSON 值"
 								/>

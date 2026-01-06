@@ -161,8 +161,8 @@ func (l *IPLocker) checkIPAccessRedis(ctx context.Context, providerID uint, clie
 		return true, nil
 	}
 	if err != nil {
-		// Redis错误，降级为允许访问
-		return true, err
+		// Redis 出错：由上层决定 fail-open / fail-closed
+		return false, fmt.Errorf("%w: redis ip lock check failed: %v", ErrLimiterUnavailable, err)
 	}
 
 	var record IPLockRecord
@@ -191,7 +191,7 @@ func (l *IPLocker) recordIPAccessRedis(ctx context.Context, providerID uint, cli
 	// 检查是否已有记录
 	exists, err := l.redis.Exists(ctx, key).Result()
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: redis ip lock exists failed: %v", ErrLimiterUnavailable, err)
 	}
 
 	if exists == 0 {
@@ -207,7 +207,10 @@ func (l *IPLocker) recordIPAccessRedis(ctx context.Context, providerID uint, cli
 			return err
 		}
 
-		return l.redis.Set(ctx, key, data, time.Duration(lockMinutes)*time.Minute).Err()
+		if err := l.redis.Set(ctx, key, data, time.Duration(lockMinutes)*time.Minute).Err(); err != nil {
+			return fmt.Errorf("%w: redis ip lock set failed: %v", ErrLimiterUnavailable, err)
+		}
+		return nil
 	}
 
 	return nil
@@ -219,7 +222,7 @@ func (l *IPLocker) getIPLockStatusRedis(ctx context.Context, key string) (*IPLoc
 		return nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: redis ip lock get failed: %v", ErrLimiterUnavailable, err)
 	}
 
 	var record IPLockRecord

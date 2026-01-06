@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/racio/llmio/common"
 	"github.com/racio/llmio/consts"
+	"github.com/racio/llmio/limiter"
 	"github.com/racio/llmio/models"
 	"github.com/racio/llmio/service"
 )
@@ -96,6 +97,11 @@ func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor ser
 		UserAgent: c.Request.UserAgent(),
 	})
 	if err != nil {
+		// 限流/锁定依赖不可用：按 fail-closed 策略直接拒绝
+		if errors.Is(err, limiter.ErrLimiterUnavailable) {
+			common.ErrorWithHttpStatus(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "限流服务不可用，请稍后重试")
+			return
+		}
 		common.InternalServerError(c, err.Error())
 		return
 	}

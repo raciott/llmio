@@ -87,6 +87,9 @@ func GetProviders(c *gin.Context) {
 	if providerType != "" {
 		query = query.Where("type = ?", providerType)
 	}
+
+	// 默认按创建时间升序排列（新创建的在后），保证“提供商管理”列表的排行稳定且可预期
+	query = query.Order("created_at ASC").Order("id DESC")
 	var providers []models.Provider
 	if err := query.Find(&providers).Error; err != nil {
 		common.InternalServerError(c, err.Error())

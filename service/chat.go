@@ -126,7 +126,22 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 
 	timer := time.NewTimer(time.Second * time.Duration(providersWithMeta.TimeOut))
 	defer timer.Stop()
-	for retry := range providersWithMeta.MaxRetry {
+	// 同一 provider 失败时先重试 N 次，再切换到其它 provider
+	const perProviderMaxAttempts = 3
+
+	isRetryableStatus := func(code int) bool {
+		// 可重试：限流/超时/服务端错误
+		if code == http.StatusTooManyRequests || code == http.StatusRequestTimeout {
+			return true
+		}
+		if code >= 500 && code <= 599 {
+			return true
+		}
+		return false
+	}
+
+	attempt := 0
+	for attempt < providersWithMeta.MaxRetry {
 		select {
 		case <-ctx.Done():
 			return nil, nil, ctx.Err()
@@ -148,13 +163,13 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 
 			provider := providerMap[modelWithProvider.ProviderID]
 
-			// 限流检查
+			// 限流检查（fail-closed：依赖不可用直接拒绝）
 			if enableLimiter && c != nil {
 				canProceed, reason, err := CheckProviderLimits(ctx, c, provider.ID, provider.RpmLimit, provider.IpLockMinutes)
 				if err != nil {
-					slog.Warn("Limiter check failed", "provider", provider.Name, "error", err)
-					// 限流检查失败时继续，但记录警告
-				} else if !canProceed {
+					return nil, nil, err
+				}
+				if !canProceed {
 					slog.Info("Provider blocked by limiter", "provider", provider.Name, "reason", reason)
 					balancer.Reduce(id) // 降低权重，但不完全删除
 					continue
@@ -168,25 +183,6 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 
 			slog.Info("using provider", "provider", provider.Name, "model", modelWithProvider.ProviderModel)
 
-			// 是否记录IO
-			ioLog := 0
-			if providersWithMeta.IOLog {
-				ioLog = 1
-			}
-
-			log := models.ChatLog{
-				Name:          before.Model,
-				ProviderModel: modelWithProvider.ProviderModel,
-				ProviderName:  provider.Name,
-				Status:        "success",
-				Style:         style,
-				UserAgent:     reqMeta.UserAgent,
-				RemoteIP:      reqMeta.RemoteIP,
-				AuthKeyID:     authKeyID,
-				ChatIO:        ioLog,
-				Retry:         retry,
-				ProxyTimeMs:   int(time.Since(start).Milliseconds()),
-			}
 			// 根据请求原始请求头 是否透传请求头 自定义请求头 构建新的请求头
 			withHeader := modelWithProvider.WithHeader == 1
 			// 解析自定义请求头
@@ -198,50 +194,92 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 			}
 			header := BuildHeaders(reqMeta.Header, withHeader, customHeaders, before.Stream)
 
-			req, err := chatModel.BuildReq(ctx, header, modelWithProvider.ProviderModel, before.raw)
-			if err != nil {
-				retryLog <- log.WithError(err)
-				// 构建请求失败 移除待选
-				balancer.Delete(id)
-				continue
-			}
+			var lastStatus int
+			var lastWas429 bool
+			for providerAttempt := 0; providerAttempt < perProviderMaxAttempts && attempt < providersWithMeta.MaxRetry; providerAttempt++ {
+				retry := attempt
+				attempt++
 
-			res, err := client.Do(req)
-			if err != nil {
-				retryLog <- log.WithError(err)
-				// 请求失败 移除待选
-				balancer.Delete(id)
-				continue
-			}
+				// 是否记录IO
+				ioLog := 0
+				if providersWithMeta.IOLog {
+					ioLog = 1
+				}
 
-			if res.StatusCode != http.StatusOK {
-				byteBody, err := io.ReadAll(res.Body)
+				log := models.ChatLog{
+					Name:          before.Model,
+					ProviderModel: modelWithProvider.ProviderModel,
+					ProviderName:  provider.Name,
+					Status:        "success",
+					Style:         style,
+					UserAgent:     reqMeta.UserAgent,
+					RemoteIP:      reqMeta.RemoteIP,
+					AuthKeyID:     authKeyID,
+					ChatIO:        ioLog,
+					Retry:         retry,
+					ProxyTimeMs:   int(time.Since(start).Milliseconds()),
+				}
+
+				req, err := chatModel.BuildReq(ctx, header, modelWithProvider.ProviderModel, before.raw)
 				if err != nil {
-					slog.Error("read body error", "error", err)
+					retryLog <- log.WithError(err)
+					// 构建请求失败属于不可恢复配置问题，直接切换
+					lastStatus = 0
+					lastWas429 = false
+					break
 				}
-				retryLog <- log.WithError(fmt.Errorf("status: %d, body: %s", res.StatusCode, safeBodyTextForLog(res, byteBody)))
 
-				if res.StatusCode == http.StatusTooManyRequests {
-					// 达到RPM限制 降低权重
-					balancer.Reduce(id)
-				} else {
-					// 非RPM限制 移除待选
-					balancer.Delete(id)
+				res, err := client.Do(req)
+				if err != nil {
+					retryLog <- log.WithError(err)
+					lastStatus = 0
+					lastWas429 = false
+					// 网络/超时类错误：继续在同一 provider 内重试
+					continue
 				}
-				res.Body.Close()
-				continue
+
+				if res.StatusCode != http.StatusOK {
+					lastStatus = res.StatusCode
+					lastWas429 = res.StatusCode == http.StatusTooManyRequests
+
+					byteBody, readErr := io.ReadAll(res.Body)
+					if readErr != nil {
+						slog.Error("read body error", "error", readErr)
+					}
+					retryLog <- log.WithError(fmt.Errorf("status: %d, body: %s", res.StatusCode, safeBodyTextForLog(res, byteBody)))
+					_ = res.Body.Close()
+
+					// 非可重试的 4xx：直接切换（不浪费同 provider 的 3 次机会）
+					if !isRetryableStatus(res.StatusCode) {
+						break
+					}
+					// 429/5xx/408：继续重试同一 provider
+					continue
+				}
+
+				// success
+				balancer.Success(id)
+
+				// 记录限流访问
+				if enableLimiter && c != nil {
+					if err := RecordProviderAccess(ctx, c, provider.ID, provider.RpmLimit, provider.IpLockMinutes); err != nil {
+						slog.Warn("Failed to record provider access", "provider", provider.Name, "error", err)
+					}
+				}
+
+				return res, &log, nil
 			}
 
-			balancer.Success(id)
-
-			// 记录限流访问
-			if enableLimiter && c != nil {
-				if err := RecordProviderAccess(ctx, c, provider.ID, provider.RpmLimit, provider.IpLockMinutes); err != nil {
-					slog.Warn("Failed to record provider access", "provider", provider.Name, "error", err)
-				}
+			// 同一 provider 多次失败后再切换
+			if lastWas429 {
+				balancer.Reduce(id)
+			} else {
+				// 0 表示网络/构建错误；或非 429 的 HTTP 错误：移除待选
+				_ = lastStatus
+				balancer.Delete(id)
 			}
 
-			return res, &log, nil
+			continue
 		}
 	}
 
