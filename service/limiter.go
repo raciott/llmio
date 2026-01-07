@@ -32,11 +32,11 @@ func GetRedisClient() *redis.Client {
 }
 
 // CheckProviderLimits 检查提供商限制
-func CheckProviderLimits(ctx context.Context, c *gin.Context, providerID uint, rpmLimit, ipLockMinutes int) (bool, string, error) {
+func CheckProviderLimits(ctx context.Context, c *gin.Context, providerID uint, rpmLimit, ipLockMinutes int, modelWithProviderID uint, tokenID uint) (bool, string, error) {
 	if globalLimiterManager == nil {
 		return true, "", nil
 	}
-	return globalLimiterManager.CheckProviderLimits(ctx, c, providerID, rpmLimit, ipLockMinutes)
+	return globalLimiterManager.CheckProviderLimits(ctx, c, providerID, rpmLimit, ipLockMinutes, modelWithProviderID, tokenID)
 }
 
 // RecordProviderAccess 记录提供商访问

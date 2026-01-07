@@ -84,6 +84,29 @@ func main() {
 
 	router.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/openai", "/anthropic", "/gemini", "/v1"})))
 
+	// IP 锁定需要基于“访问中转站的真实客户端 IP”：
+	// - 默认不信任任何代理（避免客户端伪造 X-Forwarded-For 绕过/误伤）
+	// - 如你在 Nginx/CF 等反代后面部署，请通过 TRUSTED_PROXIES 显式配置可信代理 IP/CIDR
+	//   示例：TRUSTED_PROXIES=127.0.0.1,::1,10.0.0.0/8
+	if v := strings.TrimSpace(os.Getenv("TRUSTED_PROXIES")); v == "" {
+		if err := router.SetTrustedProxies(nil); err != nil {
+			slog.Warn("Failed to disable trusted proxies", "error", err)
+		}
+	} else {
+		parts := strings.Split(v, ",")
+		proxies := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			proxies = append(proxies, p)
+		}
+		if err := router.SetTrustedProxies(proxies); err != nil {
+			slog.Warn("Failed to set trusted proxies", "error", err, "TRUSTED_PROXIES", v)
+		}
+	}
+
 	token := os.Getenv("TOKEN")
 
 	// 健康检查接口（无需认证）
@@ -198,6 +221,7 @@ func main() {
 		// Limiter management and monitoring
 		api.GET("/limiter/stats", handler.GetLimiterStats)
 		api.GET("/limiter/health", handler.GetLimiterHealth)
+		api.GET("/limiter/token-locks", handler.GetTokenLocks)
 		api.GET("/providers/:id/rpm-count", handler.GetProviderRPMCount)
 		api.GET("/providers/:id/ip-lock", handler.GetProviderIPLockStatus)
 		api.DELETE("/providers/:id/ip-lock", handler.ClearProviderIPLock)

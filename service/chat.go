@@ -127,7 +127,7 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 	timer := time.NewTimer(time.Second * time.Duration(providersWithMeta.TimeOut))
 	defer timer.Stop()
 	// 同一 provider 失败时先重试 N 次，再切换到其它 provider
-	const perProviderMaxAttempts = 3
+	const perProviderMaxAttempts = 2
 
 	isRetryableStatus := func(code int) bool {
 		// 可重试：限流/超时/服务端错误
@@ -165,7 +165,7 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 
 			// 限流检查（fail-closed：依赖不可用直接拒绝）
 			if enableLimiter && c != nil {
-				canProceed, reason, err := CheckProviderLimits(ctx, c, provider.ID, provider.RpmLimit, provider.IpLockMinutes)
+				canProceed, reason, err := CheckProviderLimits(ctx, c, provider.ID, provider.RpmLimit, provider.IpLockMinutes, modelWithProvider.ID, authKeyID)
 				if err != nil {
 					return nil, nil, err
 				}

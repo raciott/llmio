@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/racio/llmio/common"
+	"github.com/racio/llmio/limiter"
 	"github.com/racio/llmio/service"
 )
 
@@ -107,4 +109,19 @@ func GetLimiterHealth(c *gin.Context) {
 	}
 
 	common.Success(c, health)
+}
+
+// GetTokenLocks 获取当前 token 锁定（从 Redis 读取）
+func GetTokenLocks(c *gin.Context) {
+	ctx := c.Request.Context()
+	items, err := service.ListTokenLocks(ctx)
+	if err != nil {
+		if errors.Is(err, limiter.ErrLimiterUnavailable) {
+			common.ErrorWithHttpStatus(c, 503, 503, "Redis 未启用或不可用，无法读取 token 锁定数据")
+			return
+		}
+		common.InternalServerError(c, "Failed to get token locks: "+err.Error())
+		return
+	}
+	common.Success(c, items)
 }

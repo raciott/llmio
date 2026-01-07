@@ -14,7 +14,8 @@ import {
   FaCog,
   FaKey,
   FaSnowflake,
-  FaHeartbeat
+  FaHeartbeat,
+  FaLock
 } from "react-icons/fa";
 import { useTheme } from "@/components/theme-provider";
 import { useSnow } from "@/components/snow-effect";
@@ -89,6 +90,7 @@ export default function Layout() {
   const navItems = [
     { to: "/", label: "首页", icon: <FaHome /> },
     { to: "/health-ui", label: "健康监控", icon: <FaHeartbeat /> },
+    { to: "/token-locks", label: "Token 锁定", icon: <FaLock /> },
     { to: "/providers", label: "提供商管理", icon: <FaCloud /> },
     { to: "/models", label: "模型管理", icon: <FaRobot /> },
     { to: "/model-providers", label: "模型提供商关联", icon: <FaLink /> },

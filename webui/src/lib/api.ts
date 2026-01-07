@@ -476,6 +476,10 @@ export async function getProviderTemplates(): Promise<ProviderTemplate[]> {
   return apiRequest<ProviderTemplate[]>('/providers/template');
 }
 
+export async function getTokenLocks(): Promise<TokenLock[]> {
+  return apiRequest<TokenLock[]>('/limiter/token-locks');
+}
+
 // Provider Models API functions
 export interface ProviderModel {
   id: string;
@@ -661,6 +665,19 @@ export interface ProviderHealth {
   failedRequests: number;
   lastError?: string;
   models: ModelHealth[]; // 该提供商下的模型列表
+}
+
+// Token 锁定（从 Redis 读取）
+export interface TokenLock {
+  modelWithProviderId: number;
+  modelId: number;
+  modelName: string;
+  providerId: number;
+  providerName: string;
+  providerModel: string;
+  tokenId: number;
+  ttlSeconds: number;
+  lockedUntil: string;
 }
 
 export interface SystemHealth {

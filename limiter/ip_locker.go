@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -120,33 +119,10 @@ func (l *IPLocker) normalizeIP(clientIP string) string {
 
 // getClientIP 从Gin上下文中获取客户端IP
 func (l *IPLocker) GetClientIP(c *gin.Context) string {
-	// 优先从X-Forwarded-For获取
-	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
-		// X-Forwarded-For可能包含多个IP，取第一个
-		if ips := parseXForwardedFor(xff); len(ips) > 0 {
-			return ips[0]
-		}
-	}
-
-	// 从X-Real-IP获取
-	if xri := c.GetHeader("X-Real-IP"); xri != "" {
-		return xri
-	}
-
-	// 从RemoteAddr获取
+	// 使用 Gin 的内置 ClientIP 逻辑：
+	// - 默认情况下（未信任代理）返回与中转站建立连接的对端 IP
+	// - 当上层显式配置可信代理后，才会从 X-Forwarded-For / X-Real-IP 取真实客户端 IP
 	return c.ClientIP()
-}
-
-// parseXForwardedFor 解析X-Forwarded-For头
-func parseXForwardedFor(xff string) []string {
-	var ips []string
-	for _, ip := range strings.Split(xff, ",") {
-		ip = strings.TrimSpace(ip)
-		if normalizedIP := net.ParseIP(ip); normalizedIP != nil {
-			ips = append(ips, normalizedIP.String())
-		}
-	}
-	return ips
 }
 
 // ==================== Redis实现 ====================

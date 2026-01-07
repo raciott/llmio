@@ -15,6 +15,7 @@ import (
 type Manager struct {
 	rpmLimiter   *RPMLimiter
 	ipLocker     *IPLocker
+	tokenLocker  *TokenLocker
 	redisClient  *redis.Client
 	enabled      bool
 	redisTimeout time.Duration
@@ -31,6 +32,7 @@ func NewManager(redisClient *redis.Client) *Manager {
 	return &Manager{
 		rpmLimiter:   NewRPMLimiter(redisClient),
 		ipLocker:     NewIPLocker(redisClient),
+		tokenLocker:  NewTokenLocker(redisClient, 2*time.Minute),
 		redisClient:  redisClient,
 		enabled:      true,
 		redisTimeout: redisTimeout,
@@ -134,7 +136,7 @@ func (m *Manager) ClearIPLock(ctx context.Context, providerID uint) error {
 }
 
 // CheckProviderLimits 检查提供商的所有限制
-func (m *Manager) CheckProviderLimits(ctx context.Context, c *gin.Context, providerID uint, rpmLimit, ipLockMinutes int) (bool, string, error) {
+func (m *Manager) CheckProviderLimits(ctx context.Context, c *gin.Context, providerID uint, rpmLimit, ipLockMinutes int, modelWithProviderID uint, tokenID uint) (bool, string, error) {
 	if !m.enabled {
 		return true, "", nil
 	}
@@ -148,6 +150,18 @@ func (m *Manager) CheckProviderLimits(ctx context.Context, c *gin.Context, provi
 			return false, "limiter_unavailable", err
 		} else if !canProceed {
 			return false, "rpm_limit_exceeded", nil
+		}
+	}
+
+	// token 独占锁：放在 IP 锁定之前（避免被伪造的 XFF 影响，也符合“同 token 独占供应商”的诉求）
+	if tokenID > 0 && modelWithProviderID > 0 && m.tokenLocker != nil {
+		ok, err := m.tokenLocker.CheckAndTouch(ctx, modelWithProviderID, tokenID)
+		if err != nil {
+			slog.Warn("Token lock check failed", "provider_id", providerID, "model_with_provider_id", modelWithProviderID, "token_id", tokenID, "error", err)
+			return false, "limiter_unavailable", err
+		}
+		if !ok {
+			return false, "token_access_denied", nil
 		}
 	}
 
