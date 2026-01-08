@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import Loading from "@/components/loading";
-import { getSystemHealthDetail, type SystemHealth, type ProviderHealth, type ModelHealth } from "@/lib/api";
+import { getSystemHealthDetail, getProviders, type Provider, type SystemHealth, type ProviderHealth, type ModelHealth } from "@/lib/api";
 import { toast } from "sonner";
 import { RefreshCw, CheckCircle2, AlertCircle, XCircle, Activity, Database, HardDrive, Server, Clock, ChevronDown, ChevronRight } from "lucide-react";
 
@@ -53,6 +53,38 @@ const formatResponseTime = (ms: number): string => {
   if (ms < 1) return "< 1ms";
   if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`;
   return `${Math.round(ms)}ms`;
+};
+
+type ConsoleLatencyState =
+  | { status: "na" }
+  | { status: "loading" }
+  | { status: "ok"; ms: number; checkedAt: number }
+  | { status: "error"; message: string; checkedAt: number };
+
+const withNoCachePing = (rawUrl: string): string | null => {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    url.searchParams.set("_llmio_ping", Date.now().toString());
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
+const probeConsoleLatencyMs = async (consoleUrl: string, signal?: AbortSignal): Promise<number> => {
+  const start = performance.now();
+  // no-cors：跨域控制台一般没有 CORS，这里只关心“能否连通 + 耗时”，不读取响应内容
+  await fetch(consoleUrl, {
+    method: "GET",
+    mode: "no-cors",
+    cache: "no-store",
+    credentials: "omit",
+    redirect: "follow",
+    signal,
+  });
+  return Math.max(0, Math.round(performance.now() - start));
 };
 
 // 模型健康状态卡片（带请求块）
@@ -119,20 +151,12 @@ const ModelHealthCard = ({ model }: { model: ModelHealth }) => {
           </div>
         )}
       </div>
-
-      {/* 最近错误（如果有） */}
-      {model.lastError && (
-        <div className="mt-2 p-2 bg-destructive/10 rounded text-xs text-destructive break-words">
-          <div className="font-semibold">最近错误：</div>
-          <div className="mt-1">{model.lastError}</div>
-        </div>
-      )}
     </div>
   );
 };
 
 // 提供商卡片（可折叠）
-const ProviderCard = ({ provider }: { provider: ProviderHealth }) => {
+const ProviderCard = ({ provider, consoleLatency }: { provider: ProviderHealth; consoleLatency: ConsoleLatencyState }) => {
   const [expanded, setExpanded] = useState(false); // 默认收起
   // 后端返回的 errorRate 是百分比（0-100），这里做一次容错处理并转换为成功率百分比。
   const successRate = (() => {
@@ -141,6 +165,23 @@ const ProviderCard = ({ provider }: { provider: ProviderHealth }) => {
     const ok = Math.max(0, Math.min(100, 100 - errorRatePercent));
     return ok.toFixed(1);
   })();
+
+  const consoleLatencyText = useMemo(() => {
+    switch (consoleLatency.status) {
+      case "na":
+        return "控制台延迟: -";
+      case "loading":
+        return "控制台延迟: 检测中…";
+      case "ok":
+        return `控制台延迟: ${formatResponseTime(consoleLatency.ms)}`;
+      case "error":
+        return "控制台延迟: 失败";
+      default:
+        return "控制台延迟: -";
+    }
+  }, [consoleLatency]);
+
+  const consoleLatencyTitle = consoleLatency.status === "error" ? consoleLatency.message : undefined;
 
   return (
     <Card>
@@ -167,6 +208,10 @@ const ProviderCard = ({ provider }: { provider: ProviderHealth }) => {
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>平均响应: {formatResponseTime(provider.responseTimeMs)}</span>
+            <span>·</span>
+            <span title={consoleLatencyTitle}>
+              {consoleLatencyText}
+            </span>
           </div>
         </div>
       </CardHeader>
@@ -195,6 +240,10 @@ export default function HealthPage() {
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [timeWindow, setTimeWindow] = useState<number>(1440); // 默认 24 小时
+  const [providerConsoleMap, setProviderConsoleMap] = useState<Record<number, string>>({});
+  const [consoleLatencyMap, setConsoleLatencyMap] = useState<Record<number, ConsoleLatencyState>>({});
+  const consoleLatencyRef = useRef<Record<number, ConsoleLatencyState>>({});
+  const inFlightControllersRef = useRef<AbortController[]>([]);
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -217,6 +266,104 @@ export default function HealthPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    consoleLatencyRef.current = consoleLatencyMap;
+  }, [consoleLatencyMap]);
+
+  const loadProvidersForConsole = useCallback(async () => {
+    try {
+      const list = await getProviders();
+      const map: Record<number, string> = {};
+      for (const p of list as Provider[]) {
+        if (p && typeof p.ID === "number" && typeof p.Console === "string") {
+          map[p.ID] = p.Console;
+        }
+      }
+      setProviderConsoleMap(map);
+    } catch (err) {
+      console.error(err);
+      setProviderConsoleMap({});
+    }
+  }, []);
+
+  const cancelConsoleProbes = useCallback(() => {
+    for (const c of inFlightControllersRef.current) {
+      try {
+        c.abort();
+      } catch {
+        // ignore
+      }
+    }
+    inFlightControllersRef.current = [];
+  }, []);
+
+  const checkConsoleLatencies = useCallback(async (providerList: ProviderHealth[]) => {
+    cancelConsoleProbes();
+
+    const minIntervalMs = 30_000;
+    const now = Date.now();
+
+    const pickPingUrl = (providerId: number) => withNoCachePing(providerConsoleMap[providerId] || "");
+
+    const shouldProbe = (providerId: number, prev: ConsoleLatencyState | undefined) => {
+      if (!pickPingUrl(providerId)) return false;
+      if (!prev) return true;
+      if (prev.status === "loading" || prev.status === "na") return true;
+      if (prev.status === "ok" || prev.status === "error") {
+        return now - prev.checkedAt >= minIntervalMs;
+      }
+      return true;
+    };
+
+    // 初始化状态（只把需要探测的置为 loading，避免每次刷新都频繁打控制台）
+    setConsoleLatencyMap((prev) => {
+      const next: Record<number, ConsoleLatencyState> = { ...prev };
+      for (const p of providerList) {
+        const pingUrl = pickPingUrl(p.id);
+        if (!pingUrl) {
+          next[p.id] = { status: "na" };
+          continue;
+        }
+        if (shouldProbe(p.id, prev[p.id])) {
+          next[p.id] = { status: "loading" };
+        }
+      }
+      return next;
+    });
+
+    const concurrency = 3;
+    let idx = 0;
+    const currentMap = consoleLatencyRef.current;
+    const targets = providerList.filter((p) => shouldProbe(p.id, currentMap[p.id]));
+    const tasks = targets.map((p) => async () => {
+      const pingUrl = pickPingUrl(p.id);
+      if (!pingUrl) return;
+
+      const controller = new AbortController();
+      inFlightControllersRef.current.push(controller);
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const ms = await probeConsoleLatencyMs(pingUrl, controller.signal);
+        const checkedAt = Date.now();
+        setConsoleLatencyMap((prev) => ({ ...prev, [p.id]: { status: "ok", ms, checkedAt } }));
+      } catch (err) {
+        const checkedAt = Date.now();
+        const message = err instanceof Error ? err.message : String(err);
+        setConsoleLatencyMap((prev) => ({ ...prev, [p.id]: { status: "error", message, checkedAt } }));
+      } finally {
+        clearTimeout(timeout);
+      }
+    });
+
+    const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+      while (idx < tasks.length) {
+        const current = idx++;
+        await tasks[current]();
+      }
+    });
+    await Promise.all(workers);
+  }, [cancelConsoleProbes, providerConsoleMap]);
+
   // 自动刷新
   useEffect(() => {
     if (!autoRefresh) return;
@@ -227,6 +374,18 @@ export default function HealthPage() {
 
     return () => clearInterval(interval);
   }, [autoRefresh, fetchHealth]);
+
+  // 加载提供商列表（用于拿到 console URL）
+  useEffect(() => {
+    void loadProvidersForConsole();
+  }, [loadProvidersForConsole]);
+
+  // 当健康数据与 console 映射都准备好后，进行一次控制台延迟探测
+  useEffect(() => {
+    if (!health) return;
+    if (Object.keys(providerConsoleMap).length === 0) return;
+    void checkConsoleLatencies(health.components.providers.details);
+  }, [health, providerConsoleMap, checkConsoleLatencies]);
 
   if (loading || !health) {
     return (
@@ -383,7 +542,11 @@ export default function HealthPage() {
           {providers.details.length > 0 ? (
             <div className="space-y-3">
               {providers.details.map((provider) => (
-                <ProviderCard key={provider.id} provider={provider} />
+                <ProviderCard
+                  key={provider.id}
+                  provider={provider}
+                  consoleLatency={consoleLatencyMap[provider.id] ?? { status: "na" }}
+                />
               ))}
             </div>
           ) : (

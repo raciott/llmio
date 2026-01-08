@@ -498,16 +498,10 @@ export interface ConfigResponse {
   value: string;
 }
 
-// Config API functions
 export interface AnthropicCountTokens {
   base_url: string;
   api_key: string;
   version: string;
-}
-
-export interface ConfigResponse {
-  key: string;
-  value: string;
 }
 
 export const configAPI = {

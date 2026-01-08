@@ -6,5 +6,6 @@ db
 llmio
 webui/dist
 webui/node_modules
+.tmp/
 
 .DS_Store

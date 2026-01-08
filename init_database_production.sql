@@ -149,6 +149,10 @@ CREATE INDEX IF NOT EXISTS idx_chat_logs_auth_key_id ON chat_logs(auth_key_id);
 CREATE INDEX IF NOT EXISTS idx_chat_logs_created_at ON chat_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_logs_provider_created ON chat_logs(provider_name, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_logs_deleted_at ON chat_logs(deleted_at);
+-- 健康监控窗口函数查询优化：按 provider_name + name + provider_model 分组取最近 N 条
+CREATE INDEX IF NOT EXISTS idx_chat_logs_health_window
+ON chat_logs (provider_name, name, provider_model, created_at DESC)
+WHERE deleted_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_chat_io_log_id ON chat_io(log_id);
 CREATE INDEX IF NOT EXISTS idx_chat_io_deleted_at ON chat_io(deleted_at);

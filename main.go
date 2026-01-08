@@ -140,9 +140,6 @@ func main() {
 	// anthropic
 	anthropic := router.Group("/anthropic", authAnthropic)
 	{
-		// claude code logging
-		anthropic.POST("/api/event_logging/batch", handler.EventLogging)
-
 		v1 := anthropic.Group("/v1")
 		{
 			v1.GET("/models", handler.AnthropicModelsHandler)
