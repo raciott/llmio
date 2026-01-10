@@ -7,7 +7,25 @@ import { cn } from "@/lib/utils";
 import Loading from "@/components/loading";
 import { getSystemHealthDetail, getProviders, type Provider, type SystemHealth, type ProviderHealth, type ModelHealth } from "@/lib/api";
 import { toast } from "sonner";
-import { RefreshCw, CheckCircle2, AlertCircle, XCircle, Activity, Database, HardDrive, Server, Clock, ChevronDown, ChevronRight } from "lucide-react";
+import { RefreshCw, CheckCircle2, AlertCircle, XCircle, Activity, Database, HardDrive, Server, Clock, ChevronDown, ChevronRight, Zap, Radio } from "lucide-react";
+
+const providerCardHoverClass =
+  "relative transition-all duration-300 ease-out will-change-transform transform-gpu " +
+  "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/10 hover:border-primary/25 " +
+  "active:translate-y-0 " +
+  "motion-reduce:transition-none motion-reduce:hover:transform-none " +
+  "after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:h-[2px] " +
+  "after:bg-gradient-to-r after:from-transparent after:via-primary/40 after:to-transparent " +
+  "after:opacity-0 after:transition-opacity after:duration-300 hover:after:opacity-100";
+
+const modelCardHoverClass =
+  "relative overflow-hidden transition-all duration-300 ease-out will-change-transform transform-gpu " +
+  "hover:-translate-y-1 hover:shadow-xl hover:shadow-primary/10 hover:border-primary/25 " +
+  "active:translate-y-0 " +
+  "motion-reduce:transition-none motion-reduce:hover:transform-none " +
+  "after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:h-[2px] " +
+  "after:bg-gradient-to-r after:from-transparent after:via-primary/40 after:to-transparent " +
+  "after:opacity-0 after:transition-opacity after:duration-300 hover:after:opacity-100";
 
 // 状态指示器组件
 const StatusBadge = ({ status }: { status: "healthy" | "degraded" | "unhealthy" | "unknown" }) => {
@@ -87,71 +105,109 @@ const probeConsoleLatencyMs = async (consoleUrl: string, signal?: AbortSignal): 
   return Math.max(0, Math.round(performance.now() - start));
 };
 
-// 模型健康状态卡片（带请求块）
-const ModelHealthCard = ({ model }: { model: ModelHealth }) => {
+const humanProviderType = (raw: string): string => {
+  const v = (raw || "").trim();
+  if (!v) return "-";
+  const lower = v.toLowerCase();
+  if (lower === "openai") return "OpenAI";
+  if (lower === "anthropic") return "Anthropic";
+  if (lower === "gemini") return "Gemini";
+  return v.charAt(0).toUpperCase() + v.slice(1);
+};
+
+// 模型健康状态卡片（用于“提供商与模型详情”内嵌展示）
+const ModelHealthCard = ({
+  provider,
+  model,
+  consoleLatency,
+}: {
+  provider: ProviderHealth;
+  model: ModelHealth;
+  consoleLatency: ConsoleLatencyState;
+}) => {
+  const blocks = model.requestBlocks.slice(-60);
+  const pingText = consoleLatency.status === "ok" ? `${consoleLatency.ms} ms` : "-";
+
   return (
-    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
-      {/* 模型信息和统计 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-sm">{model.modelName}</span>
-          <StatusBadge status={model.status} />
-        </div>
-        <div className="flex items-center gap-4 text-sm">
-          <div>
-            <span className="text-green-600 font-semibold">{model.successRate.toFixed(1)}%</span>
-            <span className="text-muted-foreground ml-1">成功率</span>
-          </div>
-          <div>
-            <span className="font-semibold">{model.totalRequests.toLocaleString()}</span>
-            <span className="text-muted-foreground ml-1">请求</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 最近100次请求块 */}
-      <div className="space-y-2">
-        {model.requestBlocks.length > 0 ? (
-          <>
-            <div className="grid grid-cols-[repeat(100,minmax(0,1fr))] gap-[1px]">
-              {model.requestBlocks.map((block, i) => {
-                const blockClass = cn("h-7 rounded-[1px] transition-all hover:opacity-80 cursor-pointer", {
-                  "bg-green-500": block.success,
-                  "bg-red-500": !block.success,
-                });
-
-                return (
-                  <div
-                    key={i}
-                    className={blockClass}
-                    title={`第 ${i + 1} 次\n${new Date(block.timestamp).toLocaleString('zh-CN')}\n状态: ${block.success ? '成功' : '失败'}`}
-                  />
-                );
-              })}
+    <Card className={cn("overflow-hidden", modelCardHoverClass)}>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="size-10 rounded-full border bg-background flex items-center justify-center text-sm font-semibold shrink-0">
+              AI
             </div>
-
-            {/* 标签说明 */}
-            <div className="flex justify-between items-center text-xs text-muted-foreground px-1">
-              <span>最近 {model.requestBlocks.length} 次请求</span>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1">
-                  <div className="w-3 h-3 bg-green-500 rounded-sm"></div>
-                  <span>成功</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-3 h-3 bg-red-500 rounded-sm"></div>
-                  <span>失败</span>
-                </div>
+            <div className="min-w-0">
+              <div className="font-semibold truncate">{model.modelName}</div>
+              <div className="text-xs text-muted-foreground truncate">
+                {humanProviderType(provider.type)} &nbsp; {model.providerModel}
               </div>
             </div>
-          </>
-        ) : (
-          <div className="text-center py-4 text-sm text-muted-foreground">
-            暂无请求数据
           </div>
-        )}
-      </div>
-    </div>
+          <StatusBadge status={model.status} />
+        </div>
+      </CardHeader>
+
+      <CardContent className="pt-0 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-lg bg-muted/30 p-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Zap className="size-3" />
+              对话延迟
+            </div>
+            <div className="mt-1 text-2xl font-bold tabular-nums">
+              {model.avgResponseTimeMs > 0 ? `${Math.round(model.avgResponseTimeMs)} ms` : "-"}
+            </div>
+          </div>
+          <div className="rounded-lg bg-muted/30 p-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Radio className="size-3" />
+              端点 PING
+            </div>
+            <div className="mt-1 text-2xl font-bold tabular-nums">{pingText}</div>
+          </div>
+        </div>
+
+        <div className="border-t pt-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">近期可用性</span>
+            <span className="font-medium tabular-nums">{model.successRate.toFixed(0)}%</span>
+          </div>
+          <div className="mt-2 h-2 w-full rounded-full bg-muted overflow-hidden">
+            <div
+              className={cn("h-2 rounded-full transition-[width] duration-300", {
+                "bg-green-500": model.successRate >= 95,
+                "bg-yellow-500": model.successRate < 95 && model.successRate >= 80,
+                "bg-red-500": model.successRate < 80,
+              })}
+              style={{ width: `${Math.max(0, Math.min(100, model.successRate))}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="border-t pt-3">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>HISTORY (60PTS)</span>
+            <span>{new Date(model.lastCheck).toLocaleString("zh-CN")}</span>
+          </div>
+          {blocks.length > 0 ? (
+            <div className="mt-2 grid grid-cols-[repeat(60,minmax(0,1fr))] gap-[2px]">
+              {blocks.map((block, i) => (
+                <div
+                  key={i}
+                  className={cn("h-5 rounded-[2px]", {
+                    "bg-green-500": block.success,
+                    "bg-red-500": !block.success,
+                  })}
+                  title={`${new Date(block.timestamp).toLocaleString("zh-CN")} · ${block.success ? "成功" : "失败"}`}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 text-center text-sm text-muted-foreground py-2">暂无历史数据</div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 
@@ -184,7 +240,7 @@ const ProviderCard = ({ provider, consoleLatency }: { provider: ProviderHealth; 
   const consoleLatencyTitle = consoleLatency.status === "error" ? consoleLatency.message : undefined;
 
   return (
-    <Card>
+    <Card className={providerCardHoverClass}>
       <CardHeader>
         <div
           className="flex items-center justify-between cursor-pointer select-none"
@@ -217,9 +273,14 @@ const ProviderCard = ({ provider, consoleLatency }: { provider: ProviderHealth; 
       </CardHeader>
 
       {expanded && provider.models.length > 0 && (
-        <CardContent className="space-y-3">
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {provider.models.map((model) => (
-            <ModelHealthCard key={`${provider.id}-${model.modelName}`} model={model} />
+            <ModelHealthCard
+              key={`${provider.id}-${model.modelName}`}
+              provider={provider}
+              model={model}
+              consoleLatency={consoleLatency}
+            />
           ))}
         </CardContent>
       )}

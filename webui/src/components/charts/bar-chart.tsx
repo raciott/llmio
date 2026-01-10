@@ -59,60 +59,67 @@ const generateChartData = (data: ModelCount[]) => {
 
 interface ModelRankingChartProps {
   data: ModelCount[]
+  embedded?: boolean
 }
 
-export function ModelRankingChart({ data }: ModelRankingChartProps) {
+export function ModelRankingChart({ data, embedded = false }: ModelRankingChartProps) {
   const chartData = generateChartData(data)
   const chartConfig = generateChartConfig(data)
+
+  const chart = (
+    <ChartContainer config={chartConfig} className="aspect-auto h-[350px] w-full">
+      <BarChart
+        accessibilityLayer
+        data={chartData}
+        barSize={32}
+      >
+        <CartesianGrid vertical={false} />
+        <XAxis
+          dataKey="model"
+          tickLine={false}
+          axisLine={false}
+          tickMargin={16}
+          interval={0}
+          tickFormatter={(value) => String(value)}
+        />
+        <YAxis
+          dataKey="calls"
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={(value) => Number(value).toLocaleString()}
+          width={60}
+        />
+        <ChartTooltip
+          cursor={false}
+          content={<ChartTooltipContent indicator="line" hideLabel />}
+        />
+        <Bar
+          dataKey="calls"
+          fill="var(--color-calls)"
+          radius={[8, 8, 0, 0]}
+        >
+          <LabelList
+            dataKey="calls"
+            position="top"
+            offset={12}
+            className="fill-foreground font-medium"
+            fontSize={12}
+          />
+        </Bar>
+      </BarChart>
+    </ChartContainer>
+  )
+
+  if (embedded) {
+    return chart
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>模型调用排行</CardTitle>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig} className="aspect-auto h-[350px] w-full">
-          <BarChart
-            accessibilityLayer
-            data={chartData}
-            barSize={32}
-          >
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="model"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={16}
-              interval={0}
-              tickFormatter={(value) => String(value)}
-            />
-            <YAxis
-              dataKey="calls"
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(value) => Number(value).toLocaleString()}
-              width={60}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent indicator="line" hideLabel />}
-            />
-            <Bar
-              dataKey="calls"
-              fill="var(--color-calls)"
-              radius={[8, 8, 0, 0]}
-            >
-              <LabelList
-                dataKey="calls"
-                position="top"
-                offset={12}
-                className="fill-foreground font-medium"
-                fontSize={12}
-              />
-            </Bar>
-          </BarChart>
-        </ChartContainer>
-      </CardContent>
+      <CardContent>{chart}</CardContent>
     </Card>
   )
 }

@@ -451,7 +451,7 @@ var template = []ProviderTemplate{
 		}`,
 	},
 	{
-		Type: "openai-res",
+		Type: "codex",
 		Template: `{
 			"base_url": "https://api.openai.com/v1",
 			"api_key": "YOUR_API_KEY"
@@ -649,21 +649,27 @@ func UpdateModelProvider(c *gin.Context) {
 	}
 
 	// Update fields
-	updates := models.ModelWithProvider{
-		ModelID:          req.ModelID,
-		ProviderID:       req.ProviderID,
-		ProviderModel:    req.ProviderModel,
-		ToolCall:         toolCall,
-		StructuredOutput: structuredOutput,
-		Image:            image,
-		WithHeader:       withHeader,
-		CustomerHeaders:  customerHeadersJSON,
-		Weight:           req.Weight,
+	// 注意：使用 struct Updates 时 GORM 会忽略 0 值，导致 false/0 无法写入（例如勾选框取消不生效）。
+	// 由于当前泛型封装的 Updates 仅接受 struct，这里改为逐列 Update，确保 0/空字符串也能落库。
+	updatePairs := []struct {
+		col string
+		val any
+	}{
+		{"model_id", req.ModelID},
+		{"provider_id", req.ProviderID},
+		{"provider_model", req.ProviderModel},
+		{"tool_call", toolCall},
+		{"structured_output", structuredOutput},
+		{"image", image},
+		{"with_header", withHeader},
+		{"customer_headers", customerHeadersJSON},
+		{"weight", req.Weight},
 	}
-
-	if _, err := gorm.G[models.ModelWithProvider](models.DB).Where("id = ?", id).Updates(c.Request.Context(), updates); err != nil {
-		common.InternalServerError(c, "Failed to update model-provider association: "+err.Error())
-		return
+	for _, pair := range updatePairs {
+		if _, err := gorm.G[models.ModelWithProvider](models.DB).Where("id = ?", id).Update(c.Request.Context(), pair.col, pair.val); err != nil {
+			common.InternalServerError(c, "Failed to update model-provider association: "+err.Error())
+			return
+		}
 	}
 
 	// Get updated model-provider association
@@ -707,11 +713,8 @@ func UpdateModelProviderStatus(c *gin.Context) {
 	} else {
 		status = 0
 	}
-	updates := models.ModelWithProvider{
-		Status: status,
-	}
-
-	if _, err := gorm.G[models.ModelWithProvider](models.DB).Where("id = ?", id).Updates(c.Request.Context(), updates); err != nil {
+	// 使用 struct 更新会忽略 0 值，导致“禁用（0）”无法落库，这里改为单列 Update。
+	if _, err := gorm.G[models.ModelWithProvider](models.DB).Where("id = ?", id).Update(c.Request.Context(), "status", status); err != nil {
 		common.InternalServerError(c, "Failed to update status: "+err.Error())
 		return
 	}

@@ -58,43 +58,50 @@ const generateChartData = (data: ModelCount[]) => {
 
 interface ChartPieDonutTextProps {
   data: ModelCount[]
+  embedded?: boolean
 }
 
-export function ChartPieDonutText({ data }: ChartPieDonutTextProps) {
+export function ChartPieDonutText({ data, embedded = false }: ChartPieDonutTextProps) {
   const chartData = generateChartData(data)
   const chartConfig = generateChartConfig(data)
   
+  const chart = (
+    <ChartContainer
+      config={chartConfig}
+      className="mx-auto aspect-square max-h-[350px] pb-0"
+    >
+      <PieChart>
+        <ChartTooltip
+          cursor={false}
+          content={<ChartTooltipContent hideLabel />}
+        />
+        <Pie
+          data={chartData}
+          dataKey="calls"
+          nameKey="model"
+          label
+          labelLine={false}
+          innerRadius={70}
+          strokeWidth={1}
+        />
+        <ChartLegend
+          content={<ChartLegendContent nameKey="model" payload={undefined} />}
+          className="-translate-y-2 flex-wrap gap-2 min-h-12 *:basis-1/4 *:justify-center"
+        />
+      </PieChart>
+    </ChartContainer>
+  )
+
+  if (embedded) {
+    return chart
+  }
+
   return (
     <Card className="flex flex-col">
       <CardHeader className="items-center pb-0">
         <CardTitle>模型调用次数占比</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 pb-0">
-        <ChartContainer
-          config={chartConfig}
-          className="mx-auto aspect-square max-h-[350px] pb-0"
-        >
-          <PieChart>
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel />}
-            />
-            <Pie
-              data={chartData}
-              dataKey="calls"
-              nameKey="model"
-              label
-              labelLine={false}
-              innerRadius={70}
-              strokeWidth={1}
-            />
-            <ChartLegend
-              content={<ChartLegendContent nameKey="model" payload={undefined} />}
-              className="-translate-y-2 flex-wrap gap-2 min-h-12 *:basis-1/4 *:justify-center"
-            />
-          </PieChart>
-        </ChartContainer>
-      </CardContent>
+      <CardContent className="flex-1 pb-0">{chart}</CardContent>
     </Card>
   )
 }

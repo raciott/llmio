@@ -412,26 +412,26 @@ export default function ProvidersPage() {
             <div className="hidden sm:block flex-1 overflow-y-auto">
               <div className="w-full">
                 <Table className="min-w-[1200px]">
-                  <TableHeader className="z-10 sticky top-0 bg-secondary/80 text-secondary-foreground">
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>名称</TableHead>
-                      <TableHead>类型</TableHead>
-                      <TableHead>配置</TableHead>
-                      <TableHead>控制台</TableHead>
+	                  <TableHeader className="z-10 sticky top-0 bg-secondary/80 text-secondary-foreground">
+	                    <TableRow>
+	                      <TableHead>序号</TableHead>
+	                      <TableHead>名称</TableHead>
+	                      <TableHead>类型</TableHead>
+	                      <TableHead>配置</TableHead>
+	                      <TableHead>控制台</TableHead>
                       <TableHead>RPM限制</TableHead>
                       <TableHead>IP锁定(分钟)</TableHead>
                       <TableHead>操作</TableHead>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {providers.map((provider) => (
-                      <TableRow key={provider.ID}>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{provider.ID}</TableCell>
-                        <TableCell className="font-medium">{provider.Name}</TableCell>
-                        <TableCell className="text-sm">{provider.Type}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground font-mono">
-                          {getConfigBaseUrl(provider.Config)}
+	                  </TableHeader>
+	                  <TableBody>
+	                    {providers.map((provider, index) => (
+	                      <TableRow key={provider.ID}>
+	                        <TableCell className="font-mono text-xs text-muted-foreground">{index + 1}</TableCell>
+	                        <TableCell className="font-medium">{provider.Name}</TableCell>
+	                        <TableCell className="text-sm">{provider.Type}</TableCell>
+	                        <TableCell className="text-xs text-muted-foreground font-mono">
+	                          {getConfigBaseUrl(provider.Config)}
                         </TableCell>
                         <TableCell>
                           {provider.Console ? (
@@ -497,13 +497,13 @@ export default function ProvidersPage() {
                   </TableBody>
                 </Table>
               </div>
-            </div>
-            <div className="sm:hidden flex-1 min-h-0 overflow-y-auto px-2 py-3 divide-y divide-border">
-              {providers.map((provider) => (
-                <div key={provider.ID} className="py-3 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1">
+	            </div>
+	            <div className="sm:hidden flex-1 min-h-0 overflow-y-auto px-2 py-3 divide-y divide-border">
+	              {providers.map((provider, index) => (
+	                <div key={provider.ID} className="py-3 space-y-3">
+	                  <div className="flex items-start justify-between gap-2">
+	                    <div className="min-w-0 flex-1">
+	                      <div className="flex items-center gap-1">
                         <h3 className="font-semibold text-sm truncate">{provider.Name}</h3>
                         {provider.Console ? (
                           <Button
@@ -519,14 +519,14 @@ export default function ProvidersPage() {
                             <ExternalLink className="h-2.5 w-2.5 opacity-50" />
                           </Button>
                         )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-[11px] text-muted-foreground">ID: {provider.ID}</p>
-                        <p className="text-[11px] text-muted-foreground">类型: {provider.Type || "未知"}</p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap mt-1">
-                        <p className="text-[11px] text-muted-foreground">
-                          RPM: <span className={`font-medium ${provider.RpmLimit > 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
+	                      </div>
+	                      <div className="flex items-center gap-2 flex-wrap">
+	                        <p className="text-[11px] text-muted-foreground">序号: {index + 1}</p>
+	                        <p className="text-[11px] text-muted-foreground">类型: {provider.Type || "未知"}</p>
+	                      </div>
+	                      <div className="flex items-center gap-2 flex-wrap mt-1">
+	                        <p className="text-[11px] text-muted-foreground">
+	                          RPM: <span className={`font-medium ${provider.RpmLimit > 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
                             {provider.RpmLimit > 0 ? provider.RpmLimit : '无限制'}
                           </span>
                         </p>

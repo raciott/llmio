@@ -1,18 +1,66 @@
 "use client"
 
 import { useState, useEffect, Suspense, lazy, memo, useCallback } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ToggleCard } from "@/components/ui/toggle-card";
 import Loading from "@/components/loading";
 import {
-  getMetrics,
+  getMetricsSummary,
   getModelCounts,
   getProjectCounts
 } from "@/lib/api";
-import type { MetricsData, ModelCount, ProjectCount } from "@/lib/api";
+import type { MetricsSummary, ModelCount, ProjectCount } from "@/lib/api";
 import { toast } from "sonner";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Layers, BadgeCheck, KeyRound, CalendarDays, ArrowDown, ArrowUp } from "lucide-react";
+
+const cardHoverClass =
+  "transition-all duration-200 ease-out will-change-transform hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30";
+
+const cardIconWrapClass =
+  "size-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0";
+
+type ChartView = "pie" | "ranking";
+
+const SegmentedToggle = ({
+  value,
+  onChange,
+}: {
+  value: ChartView;
+  onChange: (v: ChartView) => void;
+}) => {
+  return (
+    <div className="flex rounded-lg border p-1 bg-muted/50">
+      <Button
+        variant={value === "pie" ? "default" : "ghost"}
+        size="sm"
+        onClick={() => onChange("pie")}
+        className={[
+          "h-7 px-3 text-xs font-medium transition-all",
+          value === "pie"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground",
+        ].join(" ")}
+        title="占比"
+      >
+        占比
+      </Button>
+      <Button
+        variant={value === "ranking" ? "default" : "ghost"}
+        size="sm"
+        onClick={() => onChange("ranking")}
+        className={[
+          "h-7 px-3 text-xs font-medium transition-all",
+          value === "ranking"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground",
+        ].join(" ")}
+        title="排行"
+      >
+        排行
+      </Button>
+    </div>
+  );
+};
 
 // 懒加载图表组件
 const ChartPieDonutText = lazy(() => import("@/components/charts/pie-chart").then(module => ({ default: module.ChartPieDonutText })));
@@ -73,31 +121,32 @@ const HomeHeader = memo(({ onRefresh }: HomeHeaderProps) => {
 
 export default function Home() {
   const [loading, setLoading] = useState(true);
+  const [modelView, setModelView] = useState<ChartView>("pie");
+  const [projectView, setProjectView] = useState<ChartView>("pie");
 
   // Real data from APIs
-  const [todayMetrics, setTodayMetrics] = useState<MetricsData>({ reqs: 0, tokens: 0 });
-  const [totalMetrics, setTotalMetrics] = useState<MetricsData>({ reqs: 0, tokens: 0 });
+  const [summary, setSummary] = useState<MetricsSummary>({
+    totalReqs: 0,
+    successRate: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    todayReqs: 0,
+    todaySuccessRate: 0,
+    todaySuccessReqs: 0,
+    todayFailureReqs: 0,
+    totalSuccessReqs: 0,
+    totalFailureReqs: 0,
+  });
   const [modelCounts, setModelCounts] = useState<ModelCount[]>([]);
   const [projectCounts, setProjectCounts] = useState<ProjectCount[]>([]);
 
-  const fetchTodayMetrics = useCallback(async () => {
+  const fetchSummary = useCallback(async () => {
     try {
-      const data = await getMetrics(0);
-      setTodayMetrics(data);
+      const data = await getMetricsSummary();
+      setSummary(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      toast.error(`获取今日指标失败: ${message}`);
-      console.error(err);
-    }
-  }, []);
-
-  const fetchTotalMetrics = useCallback(async () => {
-    try {
-      const data = await getMetrics(30); // Get last 30 days for "total" metrics
-      setTotalMetrics(data);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      toast.error(`获取总计指标失败: ${message}`);
+      toast.error(`获取系统概览失败: ${message}`);
       console.error(err);
     }
   }, []);
@@ -108,7 +157,7 @@ export default function Home() {
       setModelCounts(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      toast.error(`获取模型调用统计失败: ${message}`);
+      toast.error(`获取图表数据失败: ${message}`);
       console.error(err);
     }
   }, []);
@@ -119,16 +168,16 @@ export default function Home() {
       setProjectCounts(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      toast.error(`获取项目调用统计失败: ${message}`);
+      toast.error(`获取图表数据失败: ${message}`);
       console.error(err);
     }
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    await Promise.all([fetchTodayMetrics(), fetchTotalMetrics(), fetchModelCounts(), fetchProjectCounts()]);
+    await Promise.all([fetchSummary(), fetchModelCounts(), fetchProjectCounts()]);
     setLoading(false);
-  }, [fetchModelCounts, fetchProjectCounts, fetchTodayMetrics, fetchTotalMetrics]);
+  }, [fetchModelCounts, fetchProjectCounts, fetchSummary]);
 
   useEffect(() => {
     void load();
@@ -146,117 +195,144 @@ export default function Home() {
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>今日请求</CardTitle>
-                  <CardDescription>今日处理的请求总数</CardDescription>
+              <Card className={cardHoverClass}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle>请求总数</CardTitle>
+                    <div className={cardIconWrapClass} aria-hidden="true">
+                      <Layers className="size-5" />
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <AnimatedCounter value={todayMetrics.reqs} />
+                  <div className="flex items-end justify-between gap-3">
+                    <AnimatedCounter value={summary.totalReqs} />
+                    <div className="text-xs text-muted-foreground pb-1">累计</div>
+                  </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>今日Tokens</CardTitle>
-                  <CardDescription>今日处理的Tokens总数</CardDescription>
+              <Card className={cardHoverClass}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle>请求成功率</CardTitle>
+                    <div className={cardIconWrapClass} aria-hidden="true">
+                      <BadgeCheck className="size-5" />
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <AnimatedCounter value={todayMetrics.tokens} />
+                  <div className="text-3xl font-bold">{summary.successRate.toFixed(2)}%</div>
+                  <div className="mt-3 h-2 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-2 rounded-full bg-green-500 transition-[width] duration-300"
+                      style={{ width: `${Math.max(0, Math.min(100, summary.successRate))}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    成功 {summary.totalSuccessReqs.toLocaleString()} · 失败 {summary.totalFailureReqs.toLocaleString()}
+                  </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>本月请求</CardTitle>
-                  <CardDescription>最近30天处理的请求总数</CardDescription>
+              <Card className={cardHoverClass}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle>令牌统计</CardTitle>
+                    <div className={cardIconWrapClass} aria-hidden="true">
+                      <KeyRound className="size-5" />
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <AnimatedCounter value={totalMetrics.reqs} />
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <ArrowDown className="size-3" />
+                        输入
+                      </div>
+                      <AnimatedCounter value={summary.promptTokens} />
+                    </div>
+                    <div className="text-muted-foreground text-2xl leading-none">｜</div>
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <ArrowUp className="size-3" />
+                        输出
+                      </div>
+                      <AnimatedCounter value={summary.completionTokens} />
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>本月Tokens</CardTitle>
-                  <CardDescription>最近30天处理的Tokens总数</CardDescription>
+              <Card className={cardHoverClass}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle>今日请求数</CardTitle>
+                    <div className={cardIconWrapClass} aria-hidden="true">
+                      <CalendarDays className="size-5" />
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <AnimatedCounter value={totalMetrics.tokens} />
+                  <AnimatedCounter value={summary.todayReqs} />
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    成功率 {summary.todaySuccessRate.toFixed(2)}%
+                  </div>
                 </CardContent>
               </Card>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* 模型统计卡片 - 占比和排行切换 */}
-              <div className="space-y-4">
-                <ToggleCard
-                  title="模型调用统计"
-                  description="模型使用情况分析"
-                  options={[
-                    { key: "pie", label: "占比", description: "查看模型调用占比分布" },
-                    { key: "ranking", label: "排行", description: "查看模型调用排行榜" }
-                  ]}
-                  defaultOption="pie"
-                  contentOnly
-                >
-                  {(activeOption, toggleButtons) => (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-lg font-semibold">模型调用统计</h3>
-                          <p className="text-sm text-muted-foreground">模型使用情况分析</p>
-                        </div>
-                        {toggleButtons}
-                      </div>
-                      <Suspense fallback={<div className="h-64 flex items-center justify-center">
+              {/* 模型统计卡片：占比/排行按钮放到卡片右上角，隐藏额外标题文案 */}
+              <Card className={`${cardHoverClass} gap-3`}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-muted-foreground">按模型统计</div>
+                    <SegmentedToggle value={modelView} onChange={setModelView} />
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <Suspense
+                    fallback={
+                      <div className="h-64 flex items-center justify-center">
                         <Loading message="加载图表..." />
-                      </div>}>
-                        {activeOption === "pie" ? (
-                          <ChartPieDonutText data={modelCounts} />
-                        ) : (
-                          <ModelRankingChart data={modelCounts} />
-                        )}
-                      </Suspense>
-                    </div>
-                  )}
-                </ToggleCard>
-              </div>
+                      </div>
+                    }
+                  >
+                    {modelView === "pie" ? (
+                      <ChartPieDonutText data={modelCounts} embedded />
+                    ) : (
+                      <ModelRankingChart data={modelCounts} embedded />
+                    )}
+                  </Suspense>
+                </CardContent>
+              </Card>
 
-              {/* 项目统计卡片 - 占比和排行切换 */}
-              <div className="space-y-4">
-                <ToggleCard
-                  title="项目调用统计"
-                  description="项目使用情况分析"
-                  options={[
-                    { key: "pie", label: "占比", description: "查看项目调用占比分布" },
-                    { key: "ranking", label: "排行", description: "查看项目调用排行榜" }
-                  ]}
-                  defaultOption="pie"
-                  contentOnly
-                >
-                  {(activeOption, toggleButtons) => (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-lg font-semibold">项目调用统计</h3>
-                          <p className="text-sm text-muted-foreground">项目使用情况分析</p>
-                        </div>
-                        {toggleButtons}
-                      </div>
-                      <Suspense fallback={<div className="h-64 flex items-center justify-center">
+              {/* 项目统计卡片：占比/排行按钮放到卡片右上角，隐藏额外标题文案 */}
+              <Card className={`${cardHoverClass} gap-3`}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-muted-foreground">按项目统计</div>
+                    <SegmentedToggle value={projectView} onChange={setProjectView} />
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <Suspense
+                    fallback={
+                      <div className="h-64 flex items-center justify-center">
                         <Loading message="加载图表..." />
-                      </div>}>
-                        {activeOption === "pie" ? (
-                          <ProjectChartPieDonutText data={projectCounts} />
-                        ) : (
-                          <ProjectRankingChart data={projectCounts} />
-                        )}
-                      </Suspense>
-                    </div>
-                  )}
-                </ToggleCard>
-              </div>
+                      </div>
+                    }
+                  >
+                    {projectView === "pie" ? (
+                      <ProjectChartPieDonutText data={projectCounts} embedded />
+                    ) : (
+                      <ProjectRankingChart data={projectCounts} embedded />
+                    )}
+                  </Suspense>
+                </CardContent>
+              </Card>
             </div>
           </div>
         )}

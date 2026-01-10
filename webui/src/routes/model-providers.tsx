@@ -726,14 +726,14 @@ export default function ModelProvidersPage() {
           <div className="h-full flex flex-col">
             <div className="hidden sm:block flex-1 overflow-y-auto">
               <div className="w-full">
-                <Table className="min-w-[1200px]">
-                  <TableHeader className="z-10 sticky top-0 bg-secondary/80 text-secondary-foreground">
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>提供商模型</TableHead>
-                      <TableHead>类型</TableHead>
-                      <TableHead>提供商</TableHead>
-                      <TableHead>工具调用</TableHead>
+	                <Table className="min-w-[1200px]">
+	                  <TableHeader className="z-10 sticky top-0 bg-secondary/80 text-secondary-foreground">
+	                    <TableRow>
+	                      <TableHead>序号</TableHead>
+	                      <TableHead>提供商模型</TableHead>
+	                      <TableHead>类型</TableHead>
+	                      <TableHead>提供商</TableHead>
+	                      <TableHead>工具调用</TableHead>
                       <TableHead>结构化输出</TableHead>
                       <TableHead>视觉</TableHead>
                       <TableHead>请求头透传</TableHead>
@@ -754,20 +754,20 @@ export default function ModelProvidersPage() {
                         </div>
                       </TableHead>
                       <TableHead>操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedModelProviders.map((association) => {
-                      const provider = providers.find(p => p.ID === association.ProviderID);
-                      const isAssociationEnabled = association.Status ?? false;
-                      const statusBars = providerStatus[association.ID];
-                      return (
-                        <TableRow key={association.ID}>
-                          <TableCell className="font-mono text-xs text-muted-foreground">{association.ID}</TableCell>
-                          <TableCell className="max-w-[200px] truncate" title={association.ProviderModel}>
-                            {association.ProviderModel}
-                          </TableCell>
-                          <TableCell>{provider?.Type ?? '未知'}</TableCell>
+	                    </TableRow>
+	                  </TableHeader>
+	                  <TableBody>
+	                    {sortedModelProviders.map((association, index) => {
+	                      const provider = providers.find(p => p.ID === association.ProviderID);
+	                      const isAssociationEnabled = association.Status ?? false;
+	                      const statusBars = providerStatus[association.ID];
+	                      return (
+	                        <TableRow key={association.ID}>
+	                          <TableCell className="font-mono text-xs text-muted-foreground">{index + 1}</TableCell>
+	                          <TableCell className="max-w-[200px] truncate" title={association.ProviderModel}>
+	                            {association.ProviderModel}
+	                          </TableCell>
+	                          <TableCell>{provider?.Type ?? '未知'}</TableCell>
                           <TableCell>{provider?.Name ?? '未知'}</TableCell>
                           <TableCell>
                             <span className={association.ToolCall ? "text-green-600" : "text-red-600"}>
@@ -859,22 +859,23 @@ export default function ModelProvidersPage() {
                   </TableBody>
                 </Table>
               </div>
-            </div>
-            <div className="sm:hidden flex-1 min-h-0 overflow-y-auto px-2 py-3 divide-y divide-border">
-              {sortedModelProviders.map((association) => {
-                const provider = providers.find(p => p.ID === association.ProviderID);
-                const isAssociationEnabled = association.Status ?? true;
-                const statusBars = providerStatus[association.ID];
-                return (
-                  <div key={association.ID} className="py-3 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <h3 className="font-semibold text-sm truncate">{provider?.Name ?? '未知提供商'}</h3>
-                        <p className="text-[11px] text-muted-foreground">提供商模型: {association.ProviderModel}</p>
-                      </div>
-                      <span
-                        className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${isAssociationEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}
-                      >
+	            </div>
+	            <div className="sm:hidden flex-1 min-h-0 overflow-y-auto px-2 py-3 divide-y divide-border">
+	              {sortedModelProviders.map((association, index) => {
+	                const provider = providers.find(p => p.ID === association.ProviderID);
+	                const isAssociationEnabled = association.Status ?? true;
+	                const statusBars = providerStatus[association.ID];
+	                return (
+	                  <div key={association.ID} className="py-3 space-y-3">
+	                    <div className="flex items-start justify-between gap-2">
+	                      <div className="min-w-0 flex-1">
+	                        <h3 className="font-semibold text-sm truncate">{provider?.Name ?? '未知提供商'}</h3>
+	                        <p className="text-[11px] text-muted-foreground">序号: {index + 1}</p>
+	                        <p className="text-[11px] text-muted-foreground">提供商模型: {association.ProviderModel}</p>
+	                      </div>
+	                      <span
+	                        className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${isAssociationEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}
+	                      >
                         {isAssociationEnabled ? '已启用' : '已停用'}
                       </span>
                     </div>

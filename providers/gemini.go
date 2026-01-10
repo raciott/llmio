@@ -22,9 +22,15 @@ type Gemini struct {
 func (g *Gemini) BuildReq(ctx context.Context, header http.Header, model string, rawBody []byte) (*http.Request, error) {
 	model = strings.TrimPrefix(model, "models/")
 	stream, _ := ctx.Value(consts.ContextKeyGeminiStream).(bool)
+	method, _ := ctx.Value(consts.ContextKeyGeminiMethod).(string)
+
 	action := "generateContent"
 	urlSuffix := ""
-	if stream {
+	if strings.TrimSpace(method) != "" {
+		// 覆盖为指定方法（如 embedContent/batchEmbedContents）；这些方法不支持 SSE
+		action = strings.TrimSpace(method)
+		stream = false
+	} else if stream {
 		action = "streamGenerateContent"
 		urlSuffix = "?alt=sse"
 	}

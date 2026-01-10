@@ -38,7 +38,7 @@ func New(Type, providerConfig string) (Provider, error) {
 	case consts.StyleOpenAIRes:
 		var openaiRes OpenAIRes
 		if err := json.Unmarshal([]byte(providerConfig), &openaiRes); err != nil {
-			return nil, errors.New("invalid openai-res config")
+			return nil, errors.New("invalid codex config")
 		}
 
 		return &openaiRes, nil

@@ -65,7 +65,16 @@ func ReadinessCheck(c *gin.Context) {
 	if models.DB != nil {
 		// 检查关键表是否存在
 		var count int64
-		if err := models.DB.Raw("SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN ('providers', 'models', 'auth_keys')").Scan(&count).Error; err != nil {
+		tableCheckSQL := ""
+		switch models.DialectName() {
+		case "mysql":
+			// MySQL：限定当前数据库，避免跨 schema 误判
+			tableCheckSQL = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('providers', 'models', 'auth_keys')"
+		default:
+			// PostgreSQL：限定当前 schema（通常为 public）
+			tableCheckSQL = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('providers', 'models', 'auth_keys')"
+		}
+		if err := models.DB.Raw(tableCheckSQL).Scan(&count).Error; err != nil {
 			ready["status"] = "not_ready"
 			ready["database"] = "table_check_failed"
 			ready["error"] = err.Error()

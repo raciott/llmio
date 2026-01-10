@@ -18,6 +18,19 @@ type MetricsRes struct {
 	Tokens int64 `json:"tokens"`
 }
 
+type MetricsSummaryRes struct {
+	TotalReqs        int64   `json:"totalReqs"`
+	SuccessRate      float64 `json:"successRate"`
+	PromptTokens     int64   `json:"promptTokens"`
+	CompletionTokens int64   `json:"completionTokens"`
+	TodayReqs        int64   `json:"todayReqs"`
+	TodaySuccessRate float64 `json:"todaySuccessRate"`
+	TodaySuccessReqs int64   `json:"todaySuccessReqs"`
+	TodayFailureReqs int64   `json:"todayFailureReqs"`
+	TotalSuccessReqs int64   `json:"totalSuccessReqs"`
+	TotalFailureReqs int64   `json:"totalFailureReqs"`
+}
+
 func Metrics(c *gin.Context) {
 	days, err := strconv.Atoi(c.Param("days"))
 	if err != nil {
@@ -42,6 +55,79 @@ func Metrics(c *gin.Context) {
 	common.Success(c, MetricsRes{
 		Reqs:   reqs,
 		Tokens: tokens.Int64,
+	})
+}
+
+// MetricsSummary 返回系统概览用的汇总指标：
+// 1) 请求总数（全量）
+// 2) 请求成功率（全量）
+// 3) 输入/输出 token 总数（全量）
+// 4) 今日请求数（从当天 00:00 开始）
+func MetricsSummary(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	base := models.DB.Model(&models.ChatLog{}).Where("deleted_at IS NULL")
+
+	totalReqs, err := gorm.G[models.ChatLog](models.DB).Where("deleted_at IS NULL").Count(ctx, "id")
+	if err != nil {
+		common.InternalServerError(c, "Failed to count requests: "+err.Error())
+		return
+	}
+
+	totalSuccess, err := gorm.G[models.ChatLog](models.DB).Where("deleted_at IS NULL").Where("status = ?", "success").Count(ctx, "id")
+	if err != nil {
+		common.InternalServerError(c, "Failed to count success requests: "+err.Error())
+		return
+	}
+	totalFailure := totalReqs - totalSuccess
+
+	type tokenAgg struct {
+		Prompt     sql.NullInt64 `gorm:"column:prompt"`
+		Completion sql.NullInt64 `gorm:"column:completion"`
+	}
+	var agg tokenAgg
+	if err := base.Select("COALESCE(SUM(prompt_tokens),0) AS prompt, COALESCE(SUM(completion_tokens),0) AS completion").Scan(&agg).Error; err != nil {
+		common.InternalServerError(c, "Failed to sum tokens: "+err.Error())
+		return
+	}
+
+	now := time.Now()
+	year, month, day := now.Date()
+	startOfDay := time.Date(year, month, day, 0, 0, 0, 0, now.Location())
+
+	todayReqs, err := gorm.G[models.ChatLog](models.DB).Where("deleted_at IS NULL").Where("created_at >= ?", startOfDay).Count(ctx, "id")
+	if err != nil {
+		common.InternalServerError(c, "Failed to count today requests: "+err.Error())
+		return
+	}
+	todaySuccess, err := gorm.G[models.ChatLog](models.DB).Where("deleted_at IS NULL").Where("created_at >= ?", startOfDay).Where("status = ?", "success").Count(ctx, "id")
+	if err != nil {
+		common.InternalServerError(c, "Failed to count today success requests: "+err.Error())
+		return
+	}
+	todayFailure := todayReqs - todaySuccess
+
+	successRate := 0.0
+	if totalReqs > 0 {
+		successRate = float64(totalSuccess) / float64(totalReqs) * 100
+	}
+
+	todaySuccessRate := 0.0
+	if todayReqs > 0 {
+		todaySuccessRate = float64(todaySuccess) / float64(todayReqs) * 100
+	}
+
+	common.Success(c, MetricsSummaryRes{
+		TotalReqs:        totalReqs,
+		SuccessRate:      successRate,
+		PromptTokens:     agg.Prompt.Int64,
+		CompletionTokens: agg.Completion.Int64,
+		TodayReqs:        todayReqs,
+		TodaySuccessRate: todaySuccessRate,
+		TodaySuccessReqs: todaySuccess,
+		TodayFailureReqs: todayFailure,
+		TotalSuccessReqs: totalSuccess,
+		TotalFailureReqs: totalFailure,
 	})
 }
 

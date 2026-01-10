@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
+	"github.com/racio/llmio/consts"
 	"github.com/tidwall/sjson"
 )
 
@@ -20,7 +22,14 @@ func (o *OpenAI) BuildReq(ctx context.Context, header http.Header, model string,
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/chat/completions", o.BaseURL), bytes.NewReader(body))
+
+	endpoint, _ := ctx.Value(consts.ContextKeyOpenAIEndpoint).(string)
+	path := "chat/completions"
+	if strings.EqualFold(strings.TrimSpace(endpoint), "embeddings") {
+		path = "embeddings"
+	}
+	base := strings.TrimRight(o.BaseURL, "/")
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/%s", base, path), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

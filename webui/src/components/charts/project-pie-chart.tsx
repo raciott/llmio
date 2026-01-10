@@ -55,43 +55,50 @@ const generateChartData = (data: ProjectCount[]) => {
 
 interface ProjectChartPieDonutTextProps {
   data: ProjectCount[]
+  embedded?: boolean
 }
 
-export function ProjectChartPieDonutText({ data }: ProjectChartPieDonutTextProps) {
+export function ProjectChartPieDonutText({ data, embedded = false }: ProjectChartPieDonutTextProps) {
   const chartData = generateChartData(data)
   const chartConfig = generateChartConfig(data)
+
+  const chart = (
+    <ChartContainer
+      config={chartConfig}
+      className="mx-auto aspect-square max-h-[350px] pb-0"
+    >
+      <PieChart>
+        <ChartTooltip
+          cursor={false}
+          content={<ChartTooltipContent hideLabel />}
+        />
+        <Pie
+          data={chartData}
+          dataKey="calls"
+          nameKey="project"
+          label
+          labelLine={false}
+          innerRadius={70}
+          strokeWidth={1}
+        />
+        <ChartLegend
+          content={<ChartLegendContent nameKey="project" payload={undefined} />}
+          className="-translate-y-2 flex-wrap gap-2 min-h-12 *:basis-1/4 *:justify-center"
+        />
+      </PieChart>
+    </ChartContainer>
+  )
+
+  if (embedded) {
+    return chart
+  }
 
   return (
     <Card className="flex flex-col">
       <CardHeader className="items-center pb-0">
         <CardTitle>项目调用次数占比</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 pb-0">
-        <ChartContainer
-          config={chartConfig}
-          className="mx-auto aspect-square max-h-[350px] pb-0"
-        >
-          <PieChart>
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel />}
-            />
-            <Pie
-              data={chartData}
-              dataKey="calls"
-              nameKey="project"
-              label
-              labelLine={false}
-              innerRadius={70}
-              strokeWidth={1}
-            />
-            <ChartLegend
-              content={<ChartLegendContent nameKey="project" payload={undefined} />}
-              className="-translate-y-2 flex-wrap gap-2 min-h-12 *:basis-1/4 *:justify-center"
-            />
-          </PieChart>
-        </ChartContainer>
-      </CardContent>
+      <CardContent className="flex-1 pb-0">{chart}</CardContent>
     </Card>
   )
 }

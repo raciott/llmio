@@ -19,15 +19,23 @@ import (
 )
 
 func ChatCompletionsHandler(c *gin.Context) {
-	chatHandler(c, service.BeforerOpenAI, service.ProcesserOpenAI, consts.StyleOpenAI)
+	chatHandler(c, service.BeforerOpenAI, service.ProcesserOpenAI, consts.StyleOpenAI, consts.StyleOpenAI)
 }
 
 func ResponsesHandler(c *gin.Context) {
-	chatHandler(c, service.BeforerOpenAIRes, service.ProcesserOpenAiRes, consts.StyleOpenAIRes)
+	chatHandler(c, service.BeforerOpenAIRes, service.ProcesserOpenAiRes, consts.StyleOpenAIRes, consts.StyleOpenAIRes)
 }
 
 func Messages(c *gin.Context) {
-	chatHandler(c, service.BeforerAnthropic, service.ProcesserAnthropic, consts.StyleAnthropic)
+	chatHandler(c, service.BeforerAnthropic, service.ProcesserAnthropic, consts.StyleAnthropic, consts.StyleAnthropic)
+}
+
+// EmbeddingsHandler 转发 OpenAI 兼容 embeddings 接口:
+// POST /v1/embeddings
+func EmbeddingsHandler(c *gin.Context) {
+	ctx := context.WithValue(c.Request.Context(), consts.ContextKeyOpenAIEndpoint, "embeddings")
+	c.Request = c.Request.WithContext(ctx)
+	chatHandler(c, service.BeforerOpenAI, service.ProcesserOpenAI, consts.StyleOpenAI, consts.StyleOpenAIEmbeddings)
 }
 
 // GeminiGenerateContentHandler 转发 Gemini 原生接口:
@@ -40,23 +48,32 @@ func GeminiGenerateContentHandler(c *gin.Context) {
 		return
 	}
 	stream := false
+	logStyle := consts.StyleGemini
 	switch method {
 	case "generateContent":
 		stream = false
 	case "streamGenerateContent":
 		stream = true
+	case "embedContent", "batchEmbedContents":
+		// Embeddings 不支持 SSE，这里强制非流式，并在日志中标注为 embeddings
+		stream = false
+		logStyle = consts.StyleGeminiEmbeddings
 	default:
 		common.BadRequest(c, "Unsupported Gemini method: "+method)
 		return
 	}
 
 	ctx := context.WithValue(c.Request.Context(), consts.ContextKeyGeminiStream, stream)
+	// 让 provider 端按 method 路由到正确的 Gemini REST 方法（embedContent/batchEmbedContents）
+	if logStyle == consts.StyleGeminiEmbeddings {
+		ctx = context.WithValue(ctx, consts.ContextKeyGeminiMethod, method)
+	}
 	c.Request = c.Request.WithContext(ctx)
 
-	chatHandler(c, service.NewBeforerGemini(model, stream), service.ProcesserGemini, consts.StyleGemini)
+	chatHandler(c, service.NewBeforerGemini(model, stream), service.ProcesserGemini, consts.StyleGemini, logStyle)
 }
 
-func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor service.Processer, style string) {
+func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor service.Processer, providerType string, logStyle string) {
 	// 读取原始请求体
 	reqBody, err := io.ReadAll(c.Request.Body)
 	if err != nil {
@@ -83,7 +100,7 @@ func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor ser
 		return
 	}
 	// 按模型获取可用 provider
-	providersWithMeta, err := service.ProvidersWithMetaBymodelsName(ctx, style, *before)
+	providersWithMeta, err := service.ProvidersWithMetaBymodelsName(ctx, providerType, logStyle, *before)
 	if err != nil {
 		common.InternalServerError(c, err.Error())
 		return
@@ -91,7 +108,7 @@ func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor ser
 
 	startReq := time.Now()
 	// 调用负载均衡后的 provider 并转发
-	res, log, err := service.BalanceChatWithLimiter(c, startReq, style, *before, providersWithMeta, models.ReqMeta{
+	res, log, err := service.BalanceChatWithLimiter(c, startReq, logStyle, *before, providersWithMeta, models.ReqMeta{
 		Header:    c.Request.Header,
 		RemoteIP:  c.ClientIP(),
 		UserAgent: c.Request.UserAgent(),

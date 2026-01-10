@@ -334,26 +334,28 @@ export default function ModelsPage() {
             <div className="hidden sm:block flex-1 overflow-y-auto">
               <div className="w-full">
                 <Table className="min-w-[1100px]">
-                  <TableHeader className="z-10 sticky top-0 bg-secondary/80 text-secondary-foreground">
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>名称</TableHead>
-                      <TableHead>备注</TableHead>
-                      <TableHead>重试次数限制</TableHead>
-                      <TableHead>超时时间(秒)</TableHead>
+	                  <TableHeader className="z-10 sticky top-0 bg-secondary/80 text-secondary-foreground">
+	                    <TableRow>
+	                      <TableHead>序号</TableHead>
+	                      <TableHead>名称</TableHead>
+	                      <TableHead>备注</TableHead>
+	                      <TableHead>重试次数限制</TableHead>
+	                      <TableHead>超时时间(秒)</TableHead>
                       <TableHead>负载策略</TableHead>
                       <TableHead>IO 记录</TableHead>
                       <TableHead>操作</TableHead>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {models.map((model) => (
-                      <TableRow key={model.ID}>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{model.ID}</TableCell>
-                        <TableCell className="font-medium">{model.Name}</TableCell>
-                        <TableCell className="max-w-[240px] truncate text-sm" title={model.Remark}>
-                          {model.Remark || "-"}
-                        </TableCell>
+	                  </TableHeader>
+	                  <TableBody>
+	                    {models.map((model, index) => (
+	                      <TableRow key={model.ID}>
+	                        <TableCell className="font-mono text-xs text-muted-foreground">
+	                          {(page - 1) * pageSize + index + 1}
+	                        </TableCell>
+	                        <TableCell className="font-medium">{model.Name}</TableCell>
+	                        <TableCell className="max-w-[240px] truncate text-sm" title={model.Remark}>
+	                          {model.Remark || "-"}
+	                        </TableCell>
                         <TableCell>{model.MaxRetry}</TableCell>
                         <TableCell>{model.TimeOut}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{renderStrategy(model.Strategy)}</TableCell>
@@ -398,18 +400,20 @@ export default function ModelsPage() {
                   </TableBody>
                 </Table>
               </div>
-            </div>
-            <div className="sm:hidden flex-1 min-h-0 overflow-y-auto px-2 py-3 divide-y divide-border">
-              {models.map((model) => (
-                <div key={model.ID} className="py-3 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-sm truncate">{model.Name}</h3>
-                      <p className="text-[11px] text-muted-foreground">ID: {model.ID}</p>
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-1.5">
-                      <Button variant="secondary" size="icon" className="h-7 w-7" onClick={() => navigate(`/model-providers?modelId=${model.ID}`)}>
-                        <Link className="h-3.5 w-3.5" />
+	            </div>
+	            <div className="sm:hidden flex-1 min-h-0 overflow-y-auto px-2 py-3 divide-y divide-border">
+	              {models.map((model, index) => (
+	                <div key={model.ID} className="py-3 space-y-3">
+	                  <div className="flex items-start justify-between gap-2">
+	                    <div className="min-w-0 flex-1">
+	                      <h3 className="font-semibold text-sm truncate">{model.Name}</h3>
+	                      <p className="text-[11px] text-muted-foreground">
+	                        序号: {(page - 1) * pageSize + index + 1}
+	                      </p>
+	                    </div>
+	                    <div className="flex flex-wrap justify-end gap-1.5">
+	                      <Button variant="secondary" size="icon" className="h-7 w-7" onClick={() => navigate(`/model-providers?modelId=${model.ID}`)}>
+	                        <Link className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => openEditDialog(model)}>
                         <Pencil className="h-3.5 w-3.5" />

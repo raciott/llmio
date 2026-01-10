@@ -395,14 +395,14 @@ type ProvidersWithMeta struct {
 	Breaker              bool   // 是否开启熔断
 }
 
-func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Before) (*ProvidersWithMeta, error) {
+func ProvidersWithMetaBymodelsName(ctx context.Context, providerType string, logStyle string, before Before) (*ProvidersWithMeta, error) {
 	model, err := gorm.G[models.Model](models.DB).Where("name = ?", before.Model).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if _, err := SaveChatLog(ctx, models.ChatLog{
 				Name:   before.Model,
 				Status: "error",
-				Style:  style,
+				Style:  logStyle,
 				Error:  err.Error(),
 			}); err != nil {
 				return nil, err
@@ -440,7 +440,7 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 
 	providers, err := gorm.G[models.Provider](models.DB).
 		Where("id IN ?", lo.Map(modelWithProviders, func(mp models.ModelWithProvider, _ int) uint { return mp.ProviderID })).
-		Where("type = ?", style).
+		Where("type = ?", providerType).
 		Find(ctx)
 	if err != nil {
 		return nil, err

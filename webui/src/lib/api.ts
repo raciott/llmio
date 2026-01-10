@@ -439,6 +439,19 @@ export interface MetricsData {
   tokens: number;
 }
 
+export interface MetricsSummary {
+  totalReqs: number;
+  successRate: number;
+  promptTokens: number;
+  completionTokens: number;
+  todayReqs: number;
+  todaySuccessRate: number;
+  todaySuccessReqs: number;
+  todayFailureReqs: number;
+  totalSuccessReqs: number;
+  totalFailureReqs: number;
+}
+
 export interface ModelCount {
   model: string;
   calls: number;
@@ -451,6 +464,10 @@ export interface ProjectCount {
 
 export async function getMetrics(days: number): Promise<MetricsData> {
   return apiRequest<MetricsData>(`/metrics/use/${days}`);
+}
+
+export async function getMetricsSummary(): Promise<MetricsSummary> {
+  return apiRequest<MetricsSummary>('/metrics/summary');
 }
 
 export async function getModelCounts(): Promise<ModelCount[]> {

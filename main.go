@@ -29,14 +29,22 @@ func init() {
 	_ = godotenv.Load()
 
 	ctx := context.Background()
-	// PostgreSQL 连接串支持两种格式：
-	// 1) key=value DSN: host=localhost user=postgres password=postgres dbname=llmio port=5432 sslmode=disable
-	// 2) URL: postgres://postgres:postgres@localhost:5432/llmio?sslmode=disable
-	dsn := os.Getenv("DATABASE_DSN")
-	if dsn == "" {
-		dsn = "postgres://postgres:postgres@localhost:5432/llmio?sslmode=disable"
+	// 数据库支持 PostgreSQL / MySQL，通过 DATABASE_TYPE 选择。
+	// - DATABASE_TYPE=postgres|mysql（默认 postgres）
+	// - DATABASE_DSN：连接串（postgres 支持 key=value 或 URL；mysql 支持 DSN 或 mysql:// URL）
+	dbType := strings.TrimSpace(os.Getenv("DATABASE_TYPE"))
+	dsn := strings.TrimSpace(os.Getenv("DATABASE_DSN"))
+	if dbType == "" {
+		dbType = "postgres"
 	}
-	models.Init(ctx, dsn)
+	if dsn == "" {
+		if strings.EqualFold(dbType, "mysql") {
+			dsn = "root:root@tcp(localhost:3306)/llmio?charset=utf8mb4&parseTime=True&loc=Local"
+		} else {
+			dsn = "postgres://postgres:postgres@localhost:5432/llmio?sslmode=disable"
+		}
+	}
+	models.Init(ctx, dbType, dsn)
 
 	// 初始化首次部署时间（持久化到数据库 configs 表），用于跨重启统计系统总运行时间。
 	if _, err := service.GetOrInitFirstDeployTime(ctx); err != nil {
@@ -134,6 +142,7 @@ func main() {
 			v1.GET("/models", handler.OpenAIModelsHandler)
 			v1.POST("/chat/completions", handler.ChatCompletionsHandler)
 			v1.POST("/responses", handler.ResponsesHandler)
+			v1.POST("/embeddings", handler.EmbeddingsHandler)
 		}
 	}
 
@@ -162,6 +171,7 @@ func main() {
 		v1.GET("/models", authOpenAI, handler.OpenAIModelsHandler)
 		v1.POST("/chat/completions", authOpenAI, handler.ChatCompletionsHandler)
 		v1.POST("/responses", authOpenAI, handler.ResponsesHandler)
+		v1.POST("/embeddings", authOpenAI, handler.EmbeddingsHandler)
 		v1.POST("/messages", authAnthropic, handler.Messages)
 		v1.POST("/messages/count_tokens", authAnthropic, handler.CountTokens)
 	}
@@ -170,6 +180,7 @@ func main() {
 	{
 		api.Use(middleware.Auth(token))
 		api.GET("/metrics/use/:days", handler.Metrics)
+		api.GET("/metrics/summary", handler.MetricsSummary)
 		api.GET("/metrics/counts", handler.Counts)
 		api.GET("/metrics/projects", handler.ProjectCounts)
 
