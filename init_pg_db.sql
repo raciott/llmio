@@ -1,6 +1,6 @@
 -- LLMIO 生产环境数据库初始化脚本
 -- PostgreSQL 版本
--- 使用方法: psql -d llmio -f init_database_production.sql
+-- 使用方法: psql -d llmio -f init_pg_db.sql
 
 -- 注意：本脚本仅创建表结构，不包含示例数据
 -- 适用于生产环境部署
@@ -31,10 +31,12 @@ CREATE TABLE IF NOT EXISTS models (
     io_log INTEGER NOT NULL DEFAULT 0,
     strategy VARCHAR(50) NOT NULL DEFAULT 'lottery',
     breaker INTEGER NOT NULL DEFAULT 0,
+    status INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
 );
+ALTER TABLE models ADD COLUMN IF NOT EXISTS status INTEGER NOT NULL DEFAULT 1;
 
 -- 创建 model_with_providers 表
 CREATE TABLE IF NOT EXISTS model_with_providers (
@@ -127,6 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_providers_type ON providers(type);
 
 CREATE INDEX IF NOT EXISTS idx_models_deleted_at ON models(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_models_name ON models(name);
+CREATE INDEX IF NOT EXISTS idx_models_status ON models(status);
 
 CREATE INDEX IF NOT EXISTS idx_model_with_providers_model_id ON model_with_providers(model_id);
 CREATE INDEX IF NOT EXISTS idx_model_with_providers_provider_id ON model_with_providers(provider_id);

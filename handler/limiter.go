@@ -1,12 +1,10 @@
 package handler
 
 import (
-	"errors"
-	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/racio/llmio/common"
-	"github.com/racio/llmio/limiter"
 	"github.com/racio/llmio/service"
 )
 
@@ -17,79 +15,61 @@ func GetLimiterStats(c *gin.Context) {
 	common.Success(c, stats)
 }
 
-// GetProviderRPMCount 获取指定提供商的当前RPM计数
-func GetProviderRPMCount(c *gin.Context) {
-	providerIDStr := c.Param("id")
-	providerID, err := strconv.ParseUint(providerIDStr, 10, 32)
-	if err != nil {
-		common.BadRequest(c, "Invalid provider ID")
-		return
-	}
-
-	ctx := c.Request.Context()
-	count, err := service.GetCurrentRPMCount(ctx, uint(providerID))
-	if err != nil {
-		common.InternalServerError(c, "Failed to get RPM count: "+err.Error())
-		return
-	}
-
-	common.Success(c, gin.H{
-		"provider_id": providerID,
-		"rpm_count":   count,
-	})
+type ProviderStatsRequest struct {
+	ProviderIDs []uint `json:"provider_ids"`
 }
 
-// GetProviderIPLockStatus 获取指定提供商的IP锁定状态
-func GetProviderIPLockStatus(c *gin.Context) {
-	providerIDStr := c.Param("id")
-	providerID, err := strconv.ParseUint(providerIDStr, 10, 32)
-	if err != nil {
-		common.BadRequest(c, "Invalid provider ID")
+type ProviderStatsItem struct {
+	ProviderID   uint       `json:"provider_id"`
+	RPMCount     int        `json:"rpm_count"`
+	RPMLoaded    bool       `json:"rpm_loaded"`
+	Locked       bool       `json:"locked"`
+	IPLockLoaded bool       `json:"ip_lock_loaded"`
+	LockUntil    *time.Time `json:"lock_until,omitempty"`
+}
+
+// GetProvidersStats 批量获取提供商 RPM/IP 锁定状态
+func GetProvidersStats(c *gin.Context) {
+	var req ProviderStatsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.BadRequest(c, "Invalid request body: "+err.Error())
+		return
+	}
+	if len(req.ProviderIDs) == 0 {
+		common.Success(c, []ProviderStatsItem{})
 		return
 	}
 
 	ctx := c.Request.Context()
-	status, err := service.GetIPLockStatus(ctx, uint(providerID))
-	if err != nil {
-		common.InternalServerError(c, "Failed to get IP lock status: "+err.Error())
-		return
-	}
+	results := make([]ProviderStatsItem, 0, len(req.ProviderIDs))
+	for _, providerID := range req.ProviderIDs {
+		rpmCount, rpmErr := service.GetCurrentRPMCount(ctx, providerID)
+		rpmLoaded := rpmErr == nil
+		if rpmErr != nil {
+			rpmCount = 0
+		}
 
-	if status == nil {
-		common.Success(c, gin.H{
-			"provider_id": providerID,
-			"locked":      false,
+		status, ipErr := service.GetIPLockStatus(ctx, providerID)
+		ipLoaded := ipErr == nil
+		locked := false
+		var lockUntil *time.Time
+		if ipErr == nil && status != nil {
+			locked = true
+			lock := status.LockUntil
+			lockUntil = &lock
+		}
+
+		results = append(results, ProviderStatsItem{
+			ProviderID:   providerID,
+			RPMCount:     rpmCount,
+			RPMLoaded:    rpmLoaded,
+			Locked:       locked,
+			IPLockLoaded: ipLoaded,
+			LockUntil:    lockUntil,
 		})
-		return
 	}
 
-	common.Success(c, gin.H{
-		"provider_id":       providerID,
-		"locked":            true,
-		"first_access_ip":   status.FirstAccessIP,
-		"first_access_time": status.FirstAccessTime,
-		"lock_until":        status.LockUntil,
-	})
-}
-
-// ClearProviderIPLock 清除指定提供商的IP锁定
-func ClearProviderIPLock(c *gin.Context) {
-	providerIDStr := c.Param("id")
-	providerID, err := strconv.ParseUint(providerIDStr, 10, 32)
-	if err != nil {
-		common.BadRequest(c, "Invalid provider ID")
-		return
-	}
-
-	ctx := c.Request.Context()
-	if err := service.ClearIPLock(ctx, uint(providerID)); err != nil {
-		common.InternalServerError(c, "Failed to clear IP lock: "+err.Error())
-		return
-	}
-
-	common.SuccessWithMessage(c, "IP lock cleared", gin.H{
-		"provider_id": providerID,
-	})
+	common.Success(c, results)
 }
 
 // GetLimiterHealth 获取限流器健康状态
@@ -109,19 +89,4 @@ func GetLimiterHealth(c *gin.Context) {
 	}
 
 	common.Success(c, health)
-}
-
-// GetTokenLocks 获取当前 token 锁定（从 Redis 读取）
-func GetTokenLocks(c *gin.Context) {
-	ctx := c.Request.Context()
-	items, err := service.ListTokenLocks(ctx)
-	if err != nil {
-		if errors.Is(err, limiter.ErrLimiterUnavailable) {
-			common.ErrorWithHttpStatus(c, 503, 503, "Redis 未启用或不可用，无法读取 token 锁定数据")
-			return
-		}
-		common.InternalServerError(c, "Failed to get token locks: "+err.Error())
-		return
-	}
-	common.Success(c, items)
 }

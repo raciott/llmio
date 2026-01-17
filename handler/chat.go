@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -27,6 +28,7 @@ func ResponsesHandler(c *gin.Context) {
 }
 
 func Messages(c *gin.Context) {
+	slog.Info("Request headers captured", "path", c.FullPath(), "headers", formatHeadersJSON(c.Request.Header))
 	chatHandler(c, service.BeforerAnthropic, service.ProcesserAnthropic, consts.StyleAnthropic, consts.StyleAnthropic)
 }
 
@@ -159,6 +161,14 @@ func writeHeader(c *gin.Context, stream bool, header http.Header) {
 		c.Header("X-Accel-Buffering", "no")
 	}
 	c.Writer.Flush()
+}
+
+func formatHeadersJSON(header http.Header) string {
+	content, err := json.MarshalIndent(header, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(content)
 }
 
 // 校验auhtKey的模型使用权限

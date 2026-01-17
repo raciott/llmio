@@ -57,6 +57,11 @@ type ModelProviderStatusRequest struct {
 	Status bool `json:"status"`
 }
 
+// ModelStatusRequest represents the request body for updating model status
+type ModelStatusRequest struct {
+	Status bool `json:"status"`
+}
+
 // SystemConfigRequest represents the request body for updating system configuration
 type SystemConfigRequest struct {
 	EnableSmartRouting  bool    `json:"enable_smart_routing"`
@@ -332,6 +337,7 @@ func CreateModel(c *gin.Context) {
 		IOLog:    ioLog,
 		Strategy: strategy,
 		Breaker:  breaker,
+		Status:   1,
 	}
 
 	if err := gorm.G[models.Model](models.DB).Create(c.Request.Context(), &model); err != nil {
@@ -398,6 +404,40 @@ func UpdateModel(c *gin.Context) {
 	}
 
 	// Get updated model
+	updatedModel, err := gorm.G[models.Model](models.DB).Where("id = ?", id).First(c.Request.Context())
+	if err != nil {
+		common.InternalServerError(c, "Failed to retrieve updated model: "+err.Error())
+		return
+	}
+
+	common.Success(c, updatedModel)
+}
+
+// UpdateModelStatus 更新模型启用状态
+func UpdateModelStatus(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		common.BadRequest(c, "Invalid ID format")
+		return
+	}
+
+	var req ModelStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.BadRequest(c, "Invalid request body: "+err.Error())
+		return
+	}
+
+	status := 0
+	if req.Status {
+		status = 1
+	}
+
+	if _, err := gorm.G[models.Model](models.DB).Where("id = ?", id).Update(c.Request.Context(), "status", status); err != nil {
+		common.InternalServerError(c, "Failed to update model status: "+err.Error())
+		return
+	}
+
 	updatedModel, err := gorm.G[models.Model](models.DB).Where("id = ?", id).First(c.Request.Context())
 	if err != nil {
 		common.InternalServerError(c, "Failed to retrieve updated model: "+err.Error())

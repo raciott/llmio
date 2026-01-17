@@ -18,11 +18,6 @@ func SetLimiterManager(manager *limiter.Manager) {
 	slog.Info("Limiter manager initialized", "enabled", manager.IsEnabled())
 }
 
-// GetLimiterManager 获取全局限流管理器
-func GetLimiterManager() *limiter.Manager {
-	return globalLimiterManager
-}
-
 // GetRedisClient 获取Redis客户端
 func GetRedisClient() *redis.Client {
 	if globalLimiterManager == nil {

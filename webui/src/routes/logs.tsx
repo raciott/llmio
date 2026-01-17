@@ -2,21 +2,22 @@ import { useState, useEffect, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import Loading from "@/components/loading";
 import { getLogs, getProviders, getModelOptions, getAuthKeysList, type ChatLog, type Provider, type Model, type AuthKeyItem, getProviderTemplates, cleanLogs } from "@/lib/api";
-import { ChevronLeft, ChevronRight, RefreshCw, Trash2, Eye, EyeOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Trash2, Eye, EyeOff, Timer, ArrowDown, ArrowUp, Zap } from "lucide-react";
+import hunyuanIcon from "@/assets/modelIcon/hunyuan.svg";
+import doubaoIcon from "@/assets/modelIcon/doubao.svg";
+import grokIcon from "@/assets/modelIcon/grok.svg";
+import qwenIcon from "@/assets/modelIcon/qwen.svg";
+import minimaxIcon from "@/assets/modelIcon/minimax.svg";
+import openaiIcon from "@/assets/modelIcon/openai.svg";
+import claudeIcon from "@/assets/modelIcon/claude.svg";
+import geminiIcon from "@/assets/modelIcon/gemini.svg";
+import deepseekIcon from "@/assets/modelIcon/deepseek.svg";
 
 // 格式化耗时显示（后端字段单位为毫秒）
 const formatDurationMs = (milliseconds: number): string => {
@@ -88,6 +89,43 @@ const parsePromptTokensDetails = (value: ChatLog["prompt_tokens_details"]) => {
   } catch {
     return { cached_tokens: 0 };
   }
+};
+
+type ModelIconConfig = {
+  test: RegExp;
+  src: string;
+  alt: string;
+};
+
+const modelIconConfigs: ModelIconConfig[] = [
+  { test: /hunyuan/i, src: hunyuanIcon, alt: "Hunyuan" },
+  { test: /doubao|ark/i, src: doubaoIcon, alt: "Doubao" },
+  { test: /grok|xai/i, src: grokIcon, alt: "Grok" },
+  { test: /qwen|tongyi/i, src: qwenIcon, alt: "Qwen" },
+  { test: /minimax|abab/i, src: minimaxIcon, alt: "MiniMax" },
+  { test: /openai|gpt|o1|o3|o4/i, src: openaiIcon, alt: "OpenAI" },
+  { test: /claude|anthropic/i, src: claudeIcon, alt: "Claude" },
+  { test: /gemini|google/i, src: geminiIcon, alt: "Gemini" },
+  { test: /deepseek/i, src: deepseekIcon, alt: "DeepSeek" },
+];
+
+const ModelIcon = ({ name }: { name: string }) => {
+  const config = modelIconConfigs.find((item) => item.test.test(name));
+  const fallback = (name || "M").slice(0, 2).toUpperCase();
+
+  if (!config) {
+    return (
+      <div className="size-10 rounded-2xl bg-muted/60 text-muted-foreground flex items-center justify-center font-semibold text-xs">
+        {fallback}
+      </div>
+    );
+  }
+
+  return (
+    <div className="size-10 rounded-2xl bg-muted/60 flex items-center justify-center">
+      <img src={config.src} alt={config.alt} className="size-5" />
+    </div>
+  );
 };
 
 export default function LogsPage() {
@@ -333,117 +371,94 @@ export default function LogsPage() {
           </div>
         ) : (
           <div className="h-full flex flex-col">
-            <div className="flex-1 overflow-y-auto">
-              <div className="hidden sm:block w-full">
-                <Table className="min-w-[1200px]">
-                  <TableHeader className="z-10 sticky top-0 bg-secondary/90 backdrop-blur text-secondary-foreground">
-                    <TableRow className="hover:bg-secondary/90">
-                      <TableHead>时间</TableHead>
-                      <TableHead>模型</TableHead>
-                      <TableHead>项目</TableHead>
-                      <TableHead>状态</TableHead>
-                      <TableHead>Tokens</TableHead>
-                      <TableHead>响应大小</TableHead>
-                      <TableHead>耗时</TableHead>
-                      <TableHead>提供商模型</TableHead>
-                      <TableHead>类型</TableHead>
-                      <TableHead>提供商</TableHead>
-                      <TableHead>操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {logs?.map((log) => (
-                      <TableRow key={log.ID}>
-                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {new Date(log.CreatedAt).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="font-medium">{log.Name}</TableCell>
-                        <TableCell className="text-xs">{log.key_name || '-'}</TableCell>
-                        <TableCell>
-                          <span className={`inline-flex items-center px-2 py-1 ${log.Status === 'success' ? 'text-green-500' : 'text-red-500 '
-                            }`}>
-                            {log.Status}
-                          </span>
-                        </TableCell>
-                        <TableCell>{log.total_tokens}</TableCell>
-                        <TableCell className="text-xs">
-                          {log.Size ? formatBytes(log.Size) : '-'}
-                        </TableCell>
-                        <TableCell>{formatDurationMs(getLogDurationsMs(log).total)}</TableCell>
-                        <TableCell className="max-w-[120px] truncate text-xs" title={log.ProviderModel}>{log.ProviderModel}</TableCell>
-                        <TableCell className="text-xs">{log.Style}</TableCell>
-                        <TableCell className="text-xs">{log.ProviderName}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openDetailDialog(log)}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleViewChatIO(log)}
-                              disabled={!canViewChatIO(log)}
-                            >
-                              <EyeOff className="h-4 w-4" />
-                            </Button>
+            <div className="flex-1 overflow-y-auto p-3">
+              <div className="space-y-3">
+                {logs?.map((log) => {
+                  const durations = getLogDurationsMs(log);
+                  const statusText = log.Status === "success" ? "成功" : "错误";
+                  const statusClass = log.Status === "success"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-rose-100 text-rose-700";
+                  const createdAt = new Date(log.CreatedAt).toLocaleString();
+                  return (
+                    <div key={log.ID} className="rounded-2xl border border-border/60 bg-card/90 shadow-sm px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <ModelIcon name={log.Name || ""} />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 min-w-0">
+                              <span className="font-semibold truncate max-w-[26ch]" title={log.Name}>
+                                {log.Name}
+                              </span>
+                              <span className="text-xs text-muted-foreground">-&gt;</span>
+                            <span className="inline-flex items-center rounded-full bg-muted/70 px-2 py-0.5 text-xs text-muted-foreground">
+                              {log.ProviderName || "-"}
+                            </span>
+                            <span className="text-xs text-muted-foreground truncate max-w-[26ch]" title={log.ProviderModel || "-"}>
+                              {log.ProviderModel || "-"}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">{createdAt}</span>
+                            {log.Style ? (
+                              <span className="rounded-full bg-background/70 px-2 py-0.5 text-[11px] text-muted-foreground">
+                                {log.Style}
+                              </span>
+                            ) : null}
+                            {log.key_name ? (
+                              <span className="rounded-full bg-background/70 px-2 py-0.5 text-[11px] text-muted-foreground">
+                                {log.key_name}
+                              </span>
+                            ) : null}
+                            <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${statusClass}`}>
+                              {statusText}
+                            </span>
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="sm:hidden px-2 py-3 divide-y divide-border">
-                {logs?.map((log) => (
-                  <div key={log.ID} className="py-3 space-y-2 my-1 px-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <h3 className="font-semibold text-sm truncate">{log.Name}</h3>
-                        <p className="text-[11px] text-muted-foreground">{new Date(log.CreatedAt).toLocaleString()}</p>
+                          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                              <Zap className="size-3 text-amber-500" />
+                              <span>首字 {formatDurationMs(durations.first)}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Timer className="size-3 text-blue-500" />
+                              <span>总耗时 {formatDurationMs(durations.total)}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <ArrowDown className="size-3 text-emerald-500" />
+                              <span>输入 {formatTokenValue(log.prompt_tokens)}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <ArrowUp className="size-3 text-violet-500" />
+                              <span>输出 {formatTokenValue(log.completion_tokens)}</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${log.Status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                            }`}
-                        >
-                          {log.Status}
-                        </span>
-                        <div className="flex gap-1.5">
-                          <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => openDetailDialog(log)}>
-                            <Eye className="h-3.5 w-3.5" />
+                      <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => openDetailDialog(log)}
+                            aria-label="查看详情"
+                            title="查看详情"
+                          >
+                            <Eye className="h-4 w-4" />
                           </Button>
                           <Button
+                            variant="ghost"
                             size="icon"
-                            className="h-7 w-7"
+                            className="h-8 w-8"
                             onClick={() => handleViewChatIO(log)}
                             disabled={!canViewChatIO(log)}
+                            aria-label="查看 IO"
+                            title="查看 IO"
                           >
-                            <EyeOff className="h-3.5 w-3.5" />
+                            <EyeOff className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground text-[10px] uppercase tracking-wide">Tokens</p>
-                        <p className="font-medium">{log.total_tokens}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground text-[10px] uppercase tracking-wide">耗时</p>
-                        <p className="font-medium">{formatDurationMs(getLogDurationsMs(log).chunk)}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground text-[10px] uppercase tracking-wide">提供商</p>
-                        <p className="truncate">{log.ProviderName}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground text-[10px] uppercase tracking-wide">类型</p>
-                        <p>{log.Style || '-'}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -495,82 +510,77 @@ export default function LogsPage() {
       {/* 详情弹窗 */}
       {selectedLog && (
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="p-0 w-[92vw] sm:w-auto sm:max-w-2xl max-h-[95vh] flex flex-col">
-            <div className="p-4 border-b flex-shrink-0">
+          <DialogContent className="w-[92vw] sm:w-auto sm:max-w-2xl max-h-[95vh] p-0 flex flex-col">
+            <div className="px-5 py-4 border-b">
               <DialogHeader className="p-0">
-                <DialogTitle>日志详情: {selectedLog.ID}</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  日志详情
+                  <span className="text-xs text-muted-foreground font-normal">#{selectedLog.ID}</span>
+                </DialogTitle>
               </DialogHeader>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>{new Date(selectedLog.CreatedAt).toLocaleString()}</span>
+                <span className={selectedLog.Status === "success" ? "text-emerald-600" : "text-rose-600"}>
+                  {selectedLog.Status}
+                </span>
+                {selectedLog.Style ? (
+                  <span className="rounded-full bg-muted/60 px-2 py-0.5">{selectedLog.Style}</span>
+                ) : null}
+                {selectedLog.key_name ? (
+                  <span className="rounded-full bg-muted/60 px-2 py-0.5">{selectedLog.key_name}</span>
+                ) : null}
+              </div>
             </div>
-            <div className="overflow-y-auto p-3 flex-1">
-              <div className="space-y-6 text-sm">
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <div className="text-sm">
-                      <span className="text-muted-foreground">创建时间：</span>
-                      <span>{new Date(selectedLog.CreatedAt).toLocaleString()}</span>
-                    </div>
-                    <div className="text-sm">
-                      <span className="text-muted-foreground">状态：</span>
-                      <span className={selectedLog.Status === 'success' ? 'text-green-600' : 'text-red-600'}>
-                        {selectedLog.Status}
-                      </span>
-                    </div>
+            <div className="overflow-y-auto px-5 py-4 flex-1 space-y-4 text-sm">
+              {selectedLog.Error && (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3">
+                  <p className="text-xs text-destructive uppercase tracking-wide mb-1">错误信息</p>
+                  <div className="text-destructive whitespace-pre-wrap break-words text-sm">
+                    {selectedLog.Error}
                   </div>
                 </div>
-                {selectedLog.Error && (
-                  <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3">
-                    <p className="text-xs text-destructive uppercase tracking-wide mb-1">错误信息</p>
-                    <div className="text-destructive whitespace-pre-wrap break-words text-sm">
-                      {selectedLog.Error}
-                    </div>
-                  </div>
-                )}
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">基本信息</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <DetailCard label="模型名称" value={selectedLog.Name} />
-                    <DetailCard label="提供商" value={selectedLog.ProviderName || '-'} />
-                    <DetailCard label="提供商模型" value={selectedLog.ProviderModel || '-'} mono />
-                    <DetailCard label="类型" value={selectedLog.Style || '-'} />
-                    <DetailCard label="响应大小" value={selectedLog.Size ? formatBytes(selectedLog.Size) : '-'} />
-                    <DetailCard label="远端 IP" value={selectedLog.RemoteIP || '-'} mono />
-                    <DetailCard label="记录 IO" value={selectedLog.ChatIO ? '是' : '否'} />
-                    <DetailCard label="重试次数" value={selectedLog.Retry ?? 0} />
-                  </div>
-                  <div className="grid grid-cols-1 gap-4">
-                    <DetailCard label="用户代理" value={selectedLog.UserAgent || '-'} mono />
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">性能指标</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {(() => {
-                      const d = getLogDurationsMs(selectedLog);
-                      return (
-                        <>
-                          <DetailCard label="代理耗时" value={formatDurationValue(d.proxy)} />
-                          <DetailCard label="首包耗时" value={formatDurationValue(d.first)} />
-                          <DetailCard label="完成耗时" value={formatDurationValue(d.chunk)} />
-                        </>
-                      );
-                    })()}
-                    <DetailCard label="TPS" value={formatTpsValue(selectedLog.Tps)} />
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Token 使用</p>
-                  {(() => {
-                    const details = parsePromptTokensDetails(selectedLog.prompt_tokens_details);
-                    return (
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                    <DetailCard label="输入" value={formatTokenValue(selectedLog.prompt_tokens)} />
-                    <DetailCard label="输出" value={formatTokenValue(selectedLog.completion_tokens)} />
-                    <DetailCard label="总计" value={formatTokenValue(selectedLog.total_tokens)} />
-                    <DetailCard label="缓存" value={formatTokenValue(details.cached_tokens)} />
-                  </div>
-                    );
-                  })()}
-                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <DetailCard label="模型名称" value={selectedLog.Name} />
+                <DetailCard label="提供商" value={selectedLog.ProviderName || "-"} />
+                <DetailCard label="提供商模型" value={selectedLog.ProviderModel || "-"} mono />
+                <DetailCard label="响应大小" value={selectedLog.Size ? formatBytes(selectedLog.Size) : "-"} />
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {(() => {
+                  const d = getLogDurationsMs(selectedLog);
+                  return (
+                    <>
+                      <DetailCard label="代理耗时" value={formatDurationValue(d.proxy)} />
+                      <DetailCard label="首包耗时" value={formatDurationValue(d.first)} />
+                      <DetailCard label="完成耗时" value={formatDurationValue(d.chunk)} />
+                      <DetailCard label="TPS" value={formatTpsValue(selectedLog.Tps)} />
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {(() => {
+                  const details = parsePromptTokensDetails(selectedLog.prompt_tokens_details);
+                  return (
+                    <>
+                      <DetailCard label="输入" value={formatTokenValue(selectedLog.prompt_tokens)} />
+                      <DetailCard label="输出" value={formatTokenValue(selectedLog.completion_tokens)} />
+                      <DetailCard label="总计" value={formatTokenValue(selectedLog.total_tokens)} />
+                      <DetailCard label="缓存" value={formatTokenValue(details.cached_tokens)} />
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <DetailCard label="远端 IP" value={selectedLog.RemoteIP || "-"} mono />
+                <DetailCard label="用户代理" value={selectedLog.UserAgent || "-"} mono />
+                <DetailCard label="记录 IO" value={selectedLog.ChatIO ? "是" : "否"} />
+                <DetailCard label="重试次数" value={selectedLog.Retry ?? 0} />
               </div>
             </div>
           </DialogContent>

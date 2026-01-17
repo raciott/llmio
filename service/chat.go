@@ -74,10 +74,6 @@ func BalanceChatWithLimiter(c *gin.Context, start time.Time, style string, befor
 	return balanceChatInternal(c, start, style, before, providersWithMeta, reqMeta, true)
 }
 
-func BalanceChat(ctx context.Context, start time.Time, style string, before Before, providersWithMeta *ProvidersWithMeta, reqMeta models.ReqMeta) (*http.Response, *models.ChatLog, error) {
-	return balanceChatInternal(nil, start, style, before, providersWithMeta, reqMeta, false)
-}
-
 // balanceChatInternal 内部聊天负载均衡实现
 func balanceChatInternal(c *gin.Context, start time.Time, style string, before Before, providersWithMeta *ProvidersWithMeta, reqMeta models.ReqMeta, enableLimiter bool) (*http.Response, *models.ChatLog, error) {
 	slog.Info("request", "model", before.Model, "stream", before.Stream, "tool_call", before.toolCall, "structured_output", before.structuredOutput, "image", before.image)
@@ -410,6 +406,17 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, providerType string, log
 			return nil, errors.New("not found model " + before.Model)
 		}
 		return nil, err
+	}
+	if model.Status == 0 {
+		if _, err := SaveChatLog(ctx, models.ChatLog{
+			Name:   before.Model,
+			Status: "error",
+			Style:  logStyle,
+			Error:  "model disabled",
+		}); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("model disabled " + before.Model)
 	}
 
 	// model_with_providers.status/tool_call/structured_output/image 在数据库中是 0/1（int）

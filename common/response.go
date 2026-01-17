@@ -37,14 +37,6 @@ func SuccessWithMessage(c *gin.Context, message string, data any) {
 	})
 }
 
-// Error 错误响应
-func Error(c *gin.Context, code int, message string) {
-	c.JSON(http.StatusOK, Response{
-		Code:    code,
-		Message: message,
-	})
-}
-
 // ErrorWithHttpStatus 带HTTP状态码的错误响应
 func ErrorWithHttpStatus(c *gin.Context, httpStatus int, code int, message string) {
 	c.JSON(httpStatus, Response{
@@ -74,22 +66,6 @@ func BadRequest(c *gin.Context, message string) {
 func NotFound(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, Response{
 		Code:    404,
-		Message: message,
-	})
-}
-
-// Unauthorized 未授权
-func Unauthorized(c *gin.Context, message string) {
-	c.JSON(http.StatusUnauthorized, Response{
-		Code:    401,
-		Message: message,
-	})
-}
-
-// Forbidden 禁止访问
-func Forbidden(c *gin.Context, message string) {
-	c.JSON(http.StatusForbidden, Response{
-		Code:    403,
 		Message: message,
 	})
 }

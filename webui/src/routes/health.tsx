@@ -130,7 +130,7 @@ const ModelHealthCard = ({
 
   return (
     <Card className={cn("overflow-hidden", modelCardHoverClass)}>
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-1">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
             <div className="size-10 rounded-full border bg-background flex items-center justify-center text-sm font-semibold shrink-0">
@@ -143,38 +143,37 @@ const ModelHealthCard = ({
               </div>
             </div>
           </div>
-          <StatusBadge status={model.status} />
         </div>
       </CardHeader>
 
-      <CardContent className="pt-0 space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg bg-muted/30 p-3">
+      <CardContent className="pt-0 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-lg bg-muted/30 p-1.5">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Zap className="size-3" />
               对话延迟
             </div>
-            <div className="mt-1 text-2xl font-bold tabular-nums">
+            <div className="mt-0.5 text-lg font-bold tabular-nums">
               {model.avgResponseTimeMs > 0 ? `${Math.round(model.avgResponseTimeMs)} ms` : "-"}
             </div>
           </div>
-          <div className="rounded-lg bg-muted/30 p-3">
+          <div className="rounded-lg bg-muted/30 p-1.5">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Radio className="size-3" />
               端点 PING
             </div>
-            <div className="mt-1 text-2xl font-bold tabular-nums">{pingText}</div>
+            <div className="mt-0.5 text-lg font-bold tabular-nums">{pingText}</div>
           </div>
         </div>
 
-        <div className="border-t pt-3">
+        <div className="border-t pt-1.5">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">近期可用性</span>
             <span className="font-medium tabular-nums">{model.successRate.toFixed(0)}%</span>
           </div>
-          <div className="mt-2 h-2 w-full rounded-full bg-muted overflow-hidden">
+          <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted overflow-hidden">
             <div
-              className={cn("h-2 rounded-full transition-[width] duration-300", {
+              className={cn("h-1.5 rounded-full transition-[width] duration-300", {
                 "bg-green-500": model.successRate >= 95,
                 "bg-yellow-500": model.successRate < 95 && model.successRate >= 80,
                 "bg-red-500": model.successRate < 80,
@@ -184,17 +183,17 @@ const ModelHealthCard = ({
           </div>
         </div>
 
-        <div className="border-t pt-3">
+        <div className="border-t pt-1.5">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>HISTORY (60PTS)</span>
             <span>{new Date(model.lastCheck).toLocaleString("zh-CN")}</span>
           </div>
           {blocks.length > 0 ? (
-            <div className="mt-2 grid grid-cols-[repeat(60,minmax(0,1fr))] gap-[2px]">
+            <div className="mt-1.5 grid grid-cols-[repeat(60,minmax(0,1fr))] gap-[1px]">
               {blocks.map((block, i) => (
                 <div
                   key={i}
-                  className={cn("h-5 rounded-[2px]", {
+                  className={cn("h-3.5 rounded-[2px]", {
                     "bg-green-500": block.success,
                     "bg-red-500": !block.success,
                   })}
@@ -507,88 +506,86 @@ export default function HealthPage() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-        {/* 系统整体状态 */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>系统整体状态</CardTitle>
-              <StatusBadge status={health.status} />
-            </div>
-            <CardDescription>
-              最后更新: {new Date(health.timestamp).toLocaleString('zh-CN')} · 系统运行: {formatUptime(calcUptimeFromFirstDeployTime(health))} · 本次启动: {formatUptime(health.processUptime)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-3 bg-muted/50 rounded-lg">
-                <div className="text-2xl font-bold">{providers.total}</div>
-                <div className="text-sm text-muted-foreground">提供商</div>
-              </div>
-              <div className="text-center p-3 bg-green-500/10 rounded-lg">
-                <div className="text-2xl font-bold text-green-600">{providers.healthy}</div>
-                <div className="text-sm text-muted-foreground">正常</div>
-              </div>
-              <div className="text-center p-3 bg-yellow-500/10 rounded-lg">
-                <div className="text-2xl font-bold text-yellow-600">{providers.degraded}</div>
-                <div className="text-sm text-muted-foreground">警告</div>
-              </div>
-              <div className="text-center p-3 bg-red-500/10 rounded-lg">
-                <div className="text-2xl font-bold text-red-600">{providers.unhealthy}</div>
-                <div className="text-sm text-muted-foreground">异常</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 基础组件状态 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* 数据库状态 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* 系统整体状态 */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Database className="size-4" />
-                  数据库
-                </CardTitle>
-                <StatusBadge status={database.status} />
+                <CardTitle>系统整体状态</CardTitle>
+                <StatusBadge status={health.status} />
               </div>
+              <CardDescription>
+                最后更新: {new Date(health.timestamp).toLocaleString('zh-CN')} · 系统运行: {formatUptime(calcUptimeFromFirstDeployTime(health))} · 本次启动: {formatUptime(health.processUptime)}
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {database.responseTimeMs !== undefined && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">响应时间</span>
-                  <span className="font-semibold">{formatResponseTime(database.responseTimeMs)}</span>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center p-3 bg-muted/50 rounded-lg">
+                  <div className="text-2xl font-bold">{providers.total}</div>
+                  <div className="text-sm text-muted-foreground">提供商</div>
                 </div>
-              )}
-              {database.message && (
-                <div className="text-sm text-muted-foreground">{database.message}</div>
-              )}
+                <div className="text-center p-3 bg-green-500/10 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">{providers.healthy}</div>
+                  <div className="text-sm text-muted-foreground">正常</div>
+                </div>
+                <div className="text-center p-3 bg-yellow-500/10 rounded-lg">
+                  <div className="text-2xl font-bold text-yellow-600">{providers.degraded}</div>
+                  <div className="text-sm text-muted-foreground">警告</div>
+                </div>
+                <div className="text-center p-3 bg-red-500/10 rounded-lg">
+                  <div className="text-2xl font-bold text-red-600">{providers.unhealthy}</div>
+                  <div className="text-sm text-muted-foreground">异常</div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
-          {/* Redis 状态 */}
+          {/* 数据库 & Redis 状态 */}
           <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <HardDrive className="size-4" />
-                  Redis 缓存
-                </CardTitle>
-                <StatusBadge status={redis.status} />
-              </div>
+            <CardHeader className="pb-2">
+              <CardTitle>基础组件状态</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {redis.responseTimeMs !== undefined && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">响应时间</span>
-                  <span className="font-semibold">{formatResponseTime(redis.responseTimeMs)}</span>
+            <CardContent className="pt-0">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Database className="size-4" />
+                      数据库
+                    </div>
+                    <StatusBadge status={database.status} />
+                  </div>
+                  {database.responseTimeMs !== undefined && (
+                    <div className="mt-1 flex justify-between text-xs">
+                      <span className="text-muted-foreground">响应时间</span>
+                      <span className="font-semibold">{formatResponseTime(database.responseTimeMs)}</span>
+                    </div>
+                  )}
+                  {database.message && (
+                    <div className="mt-1 text-xs text-muted-foreground">{database.message}</div>
+                  )}
                 </div>
-              )}
-              {redis.message && (
-                <div className="text-sm text-muted-foreground">
-                  {redis.message === "disabled" ? "未启用" : redis.message}
+                <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <HardDrive className="size-4" />
+                      Redis 缓存
+                    </div>
+                    <StatusBadge status={redis.status} />
+                  </div>
+                  {redis.responseTimeMs !== undefined && (
+                    <div className="mt-1 flex justify-between text-xs">
+                      <span className="text-muted-foreground">响应时间</span>
+                      <span className="font-semibold">{formatResponseTime(redis.responseTimeMs)}</span>
+                    </div>
+                  )}
+                  {redis.message && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {redis.message === "disabled" ? "未启用" : redis.message}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
         </div>

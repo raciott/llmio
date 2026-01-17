@@ -1,23 +1,51 @@
 "use client"
 
 import { useState, useEffect, Suspense, lazy, memo, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import Loading from "@/components/loading";
 import {
   getMetricsSummary,
   getModelCounts,
-  getProjectCounts
+  getModelOptions,
+  getModelProviders,
+  getProjectCounts,
+  getProviders
 } from "@/lib/api";
 import type { MetricsSummary, ModelCount, ProjectCount } from "@/lib/api";
 import { toast } from "sonner";
-import { RefreshCw, Layers, BadgeCheck, KeyRound, CalendarDays, ArrowDown, ArrowUp } from "lucide-react";
+import { RefreshCw, Layers, BadgeCheck, KeyRound, CalendarDays, ArrowDown, ArrowUp, type LucideIcon } from "lucide-react";
 
 const cardHoverClass =
   "transition-all duration-200 ease-out will-change-transform hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30";
 
-const cardIconWrapClass =
-  "size-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0";
+const summaryCardClass =
+  "relative min-h-[93px] overflow-hidden rounded-[24px] border border-border/50 bg-card/80 shadow-[0_8px_22px_rgba(0,0,0,0.08)] backdrop-blur-sm";
+
+const summarySideTitleClass =
+  "text-[10px] font-semibold tracking-[0.28em] text-muted-foreground";
+
+const summaryItemIconClass =
+  "size-9 rounded-2xl bg-muted/60 text-primary flex items-center justify-center shrink-0";
+
+const providerTypeOrder = ["anthropic", "openai", "openai_res"] as const;
+type ProviderTypeKey = typeof providerTypeOrder[number];
+
+const providerTypeLabels: Record<ProviderTypeKey, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  openai_res: "Codex",
+};
+
+const createEmptyAvailableModels = (): Record<ProviderTypeKey, string[]> => ({
+  anthropic: [],
+  openai: [],
+  openai_res: [],
+});
+
+const isModelEnabled = (value?: number | null): boolean =>
+  value == null ? true : Number(value) === 1;
 
 type ChartView = "pie" | "ranking";
 
@@ -69,7 +97,15 @@ const ProjectChartPieDonutText = lazy(() => import("@/components/charts/project-
 const ProjectRankingChart = lazy(() => import("@/components/charts/project-bar-chart").then(module => ({ default: module.ProjectRankingChart })));
 
 // Animated counter component
-const AnimatedCounter = ({ value, duration = 1000 }: { value: number; duration?: number }) => {
+const AnimatedCounter = ({
+  value,
+  duration = 1000,
+  className,
+}: {
+  value: number;
+  duration?: number;
+  className?: string;
+}) => {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
@@ -90,7 +126,63 @@ const AnimatedCounter = ({ value, duration = 1000 }: { value: number; duration?:
     requestAnimationFrame(animateCount);
   }, [value, duration]);
 
-  return <div className="text-3xl font-bold">{count.toLocaleString()}</div>;
+  return (
+    <div className={["text-3xl font-bold", className].filter(Boolean).join(" ")}>
+      {count.toLocaleString()}
+    </div>
+  );
+};
+
+type SummaryMetric = {
+  label: string;
+  value: React.ReactNode;
+  subLabel?: string;
+  icon: LucideIcon;
+};
+
+type SummaryCardProps = {
+  title: string;
+  icon: LucideIcon;
+  items: [SummaryMetric, SummaryMetric];
+};
+
+const SummaryCard = ({ title, icon: TitleIcon, items }: SummaryCardProps) => {
+  return (
+    <Card className={summaryCardClass}>
+      <div className="flex h-full">
+        <div className="w-14 shrink-0 flex flex-col items-center justify-center gap-2 py-1">
+          <span className={summaryItemIconClass} aria-hidden="true">
+            <TitleIcon className="size-4.5" />
+          </span>
+          <span
+            className={summarySideTitleClass}
+            style={{ writingMode: "vertical-rl" }}
+          >
+            {title}
+          </span>
+        </div>
+        <div className="w-px bg-border/60 my-2" />
+        <div className="flex-1 grid grid-rows-2 gap-2 px-1 py-1">
+          {items.map((item) => (
+            <div key={item.label} className="flex items-center gap-3">
+              <span className={summaryItemIconClass} aria-hidden="true">
+                <item.icon className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-xs text-muted-foreground">{item.label}</div>
+                <div className="text-lg font-semibold leading-tight">{item.value}</div>
+                {item.subLabel && (
+                  <div className="text-xs text-muted-foreground">
+                    {item.subLabel}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
 };
 
 type HomeHeaderProps = {
@@ -123,6 +215,10 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [modelView, setModelView] = useState<ChartView>("pie");
   const [projectView, setProjectView] = useState<ChartView>("pie");
+  const [availableModelsLoading, setAvailableModelsLoading] = useState(false);
+  const [availableModels, setAvailableModels] = useState<Record<ProviderTypeKey, string[]>>(() =>
+    createEmptyAvailableModels()
+  );
 
   // Real data from APIs
   const [summary, setSummary] = useState<MetricsSummary>({
@@ -173,11 +269,71 @@ export default function Home() {
     }
   }, []);
 
+  const fetchAvailableModels = useCallback(async () => {
+    setAvailableModelsLoading(true);
+    try {
+      const [providers, modelOptions] = await Promise.all([getProviders(), getModelOptions()]);
+      const providerTypeById = new Map<number, ProviderTypeKey>();
+
+      providers.forEach((provider) => {
+        const rawType = (provider.Type || "").toLowerCase();
+        if (!providerTypeOrder.includes(rawType as ProviderTypeKey)) return;
+        providerTypeById.set(provider.ID, rawType as ProviderTypeKey);
+      });
+
+      const activeModels = modelOptions.filter((model) => isModelEnabled(model.Status));
+      const modelProvidersList = await Promise.all(
+        activeModels.map(async (model) => {
+          try {
+            const data = await getModelProviders(model.ID);
+            const enabled = data.filter((item) => item.Status == null || item.Status);
+            return { model, providers: enabled };
+          } catch (err) {
+            console.error("获取模型关联提供商失败", err);
+            return { model, providers: [] };
+          }
+        })
+      );
+
+      const grouped: Record<ProviderTypeKey, Set<string>> = {
+        anthropic: new Set(),
+        openai: new Set(),
+        openai_res: new Set(),
+      };
+
+      modelProvidersList.forEach(({ model, providers }) => {
+        const name = (model.Name || "").trim();
+        if (!name) return;
+        const typeSet = new Set<ProviderTypeKey>();
+        providers.forEach((provider) => {
+          const type = providerTypeById.get(provider.ProviderID);
+          if (type) typeSet.add(type);
+        });
+        typeSet.forEach((type) => grouped[type].add(name));
+      });
+
+      const next = createEmptyAvailableModels();
+      providerTypeOrder.forEach((type) => {
+        next[type] = Array.from(grouped[type]).sort((a, b) => a.localeCompare(b));
+      });
+
+      setAvailableModels(next);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`获取可用模型失败: ${message}`);
+      console.error(err);
+      setAvailableModels(createEmptyAvailableModels());
+    } finally {
+      setAvailableModelsLoading(false);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     await Promise.all([fetchSummary(), fetchModelCounts(), fetchProjectCounts()]);
     setLoading(false);
-  }, [fetchModelCounts, fetchProjectCounts, fetchSummary]);
+    void fetchAvailableModels();
+  }, [fetchAvailableModels, fetchModelCounts, fetchProjectCounts, fetchSummary]);
 
   useEffect(() => {
     void load();
@@ -195,95 +351,78 @@ export default function Home() {
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card className={cardHoverClass}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <CardTitle>请求总数</CardTitle>
-                    <div className={cardIconWrapClass} aria-hidden="true">
-                      <Layers className="size-5" />
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-end justify-between gap-3">
-                    <AnimatedCounter value={summary.totalReqs} />
-                    <div className="text-xs text-muted-foreground pb-1">累计</div>
-                  </div>
-                </CardContent>
-              </Card>
+              <SummaryCard
+                title="请求统计"
+                icon={Layers}
+                items={[
+                  {
+                    label: "请求次数",
+                    value: <AnimatedCounter value={summary.totalReqs} className="text-xl" />,
+                    icon: Layers,
+                  },
+                  {
+                    label: "今日请求",
+                    value: <AnimatedCounter value={summary.todayReqs} className="text-xl" />,
+                    icon: CalendarDays,
+                  },
+                ]}
+              />
 
-              <Card className={cardHoverClass}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <CardTitle>请求成功率</CardTitle>
-                    <div className={cardIconWrapClass} aria-hidden="true">
-                      <BadgeCheck className="size-5" />
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">{summary.successRate.toFixed(2)}%</div>
-                  <div className="mt-3 h-2 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-2 rounded-full bg-green-500 transition-[width] duration-300"
-                      style={{ width: `${Math.max(0, Math.min(100, summary.successRate))}%` }}
-                    />
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    成功 {summary.totalSuccessReqs.toLocaleString()} · 失败 {summary.totalFailureReqs.toLocaleString()}
-                  </div>
-                </CardContent>
-              </Card>
+              <SummaryCard
+                title="成功统计"
+                icon={BadgeCheck}
+                items={[
+                  {
+                    label: "成功率",
+                    value: <span className="text-xl font-semibold">{summary.successRate.toFixed(2)}%</span>,
+                    icon: BadgeCheck,
+                  },
+                  {
+                    label: "成功请求",
+                    value: <AnimatedCounter value={summary.totalSuccessReqs} className="text-xl" />,
+                    subLabel: `失败 ${summary.totalFailureReqs.toLocaleString()}`,
+                    icon: ArrowUp,
+                  },
+                ]}
+              />
 
-              <Card className={cardHoverClass}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <CardTitle>令牌统计</CardTitle>
-                    <div className={cardIconWrapClass} aria-hidden="true">
-                      <KeyRound className="size-5" />
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs text-muted-foreground flex items-center gap-1">
-                        <ArrowDown className="size-3" />
-                        输入
-                      </div>
-                      <AnimatedCounter value={summary.promptTokens} />
-                    </div>
-                    <div className="text-muted-foreground text-2xl leading-none">｜</div>
-                    <div className="min-w-0">
-                      <div className="text-xs text-muted-foreground flex items-center gap-1">
-                        <ArrowUp className="size-3" />
-                        输出
-                      </div>
-                      <AnimatedCounter value={summary.completionTokens} />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <SummaryCard
+                title="令牌统计"
+                icon={KeyRound}
+                items={[
+                  {
+                    label: "输入 Tokens",
+                    value: <AnimatedCounter value={summary.promptTokens} className="text-xl" />,
+                    icon: ArrowDown,
+                  },
+                  {
+                    label: "输出 Tokens",
+                    value: <AnimatedCounter value={summary.completionTokens} className="text-xl" />,
+                    icon: ArrowUp,
+                  },
+                ]}
+              />
 
-              <Card className={cardHoverClass}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <CardTitle>今日请求数</CardTitle>
-                    <div className={cardIconWrapClass} aria-hidden="true">
-                      <CalendarDays className="size-5" />
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <AnimatedCounter value={summary.todayReqs} />
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    成功率 {summary.todaySuccessRate.toFixed(2)}%
-                  </div>
-                </CardContent>
-              </Card>
+              <SummaryCard
+                title="今日统计"
+                icon={CalendarDays}
+                items={[
+                  {
+                    label: "今日成功率",
+                    value: <span className="text-xl font-semibold">{summary.todaySuccessRate.toFixed(2)}%</span>,
+                    icon: BadgeCheck,
+                  },
+                  {
+                    label: "今日成功",
+                    value: <AnimatedCounter value={summary.todaySuccessReqs} className="text-xl" />,
+                    subLabel: `失败 ${summary.todayFailureReqs.toLocaleString()}`,
+                    icon: Layers,
+                  },
+                ]}
+              />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:items-start">
               {/* 模型统计卡片：占比/排行按钮放到卡片右上角，隐藏额外标题文案 */}
               <Card className={`${cardHoverClass} gap-3`}>
                 <CardHeader className="pb-2">
@@ -331,6 +470,50 @@ export default function Home() {
                       <ProjectRankingChart data={projectCounts} embedded />
                     )}
                   </Suspense>
+                </CardContent>
+              </Card>
+
+              <Card className={`${cardHoverClass} gap-3 lg:col-span-2`}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-muted-foreground">当前可用模型</div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {availableModelsLoading ? (
+                    <div className="py-6 text-center text-xs text-muted-foreground">加载中...</div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {providerTypeOrder.map((type) => {
+                        const models = availableModels[type];
+                        return (
+                          <div key={type} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold text-muted-foreground">
+                                {providerTypeLabels[type]}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{models.length} 个</span>
+                            </div>
+                            {models.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {models.map((model) => (
+                                  <Badge
+                                    key={`${type}-${model}`}
+                                    variant="secondary"
+                                    className="bg-muted/60 text-foreground"
+                                  >
+                                    {model}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-muted-foreground">暂无可用模型</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

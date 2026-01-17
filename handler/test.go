@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/atopos31/nsxno/react"
@@ -50,6 +52,15 @@ const (
 
 	testAnthropic = `{
     	"model": "claude-sonnet-4-5",
+		"system": [
+			{
+				"type": "text",
+				"text": "You are Claude Code, Anthropic's official CLI for Claude.",
+				"cache_control": {
+					"type": "ephemeral"
+				}
+			}
+		],
     	"messages": [
       		{
         		"role": "user", 
@@ -63,7 +74,17 @@ const (
 					}
 				]
       		}
-    	]
+    	],
+		"tools": [],
+		"metadata": {
+			"user_id": "user_a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456_account__session_12345678-90ab-cdef-1234-567890abcdef"
+		},
+		"max_tokens": 32000,
+		"thinking": {
+			"budget_tokens": 31999,
+			"type": "enabled"
+		},
+		"stream": true
  	}`
 
 	testGemini = `{
@@ -105,7 +126,7 @@ func ProviderTestHandler(c *gin.Context) {
 	}
 
 	// Test connectivity by fetching models
-	client := providers.GetClient(time.Second * time.Duration(30))
+	responseHeaderTimeout := time.Second * time.Duration(30)
 	var testBody []byte
 	switch chatModel.Type {
 	case consts.StyleOpenAI:
@@ -125,10 +146,26 @@ func ProviderTestHandler(c *gin.Context) {
 		withHeader = *chatModel.WithHeader
 	}
 	header := service.BuildHeaders(c.Request.Header, withHeader, chatModel.CustomerHeaders, false)
+	extraHeaders, err := loadHeadersFromFile("headers.json")
+	if err != nil {
+		common.InternalServerError(c, "Failed to load headers.json: "+err.Error())
+		return
+	}
+	if header == nil {
+		header = http.Header{}
+	}
+	mergeHeaders(header, extraHeaders, map[string]struct{}{
+		"authorization":  {},
+		"content-length": {},
+		"host":           {},
+	})
 	req, err := providerInstance.BuildReq(ctx, header, chatModel.Model, []byte(testBody))
 	if err != nil {
 		common.ErrorWithHttpStatus(c, http.StatusOK, 502, "Failed to connect to provider: "+err.Error())
 		return
+	}
+	client := &http.Client{
+		Timeout: responseHeaderTimeout,
 	}
 	res, err := client.Do(req)
 	if err != nil {
@@ -271,6 +308,58 @@ func TestReactHandler(c *gin.Context) {
 		return
 	}
 	c.SSEvent("success", fmt.Sprintf("成功通过测试, 耗时: %.2fs", time.Since(start).Seconds()))
+}
+
+func loadHeadersFromFile(path string) (http.Header, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(content, &raw); err != nil {
+		return nil, err
+	}
+	header := make(http.Header, len(raw))
+	for key, value := range raw {
+		switch typed := value.(type) {
+		case string:
+			if typed == "" {
+				continue
+			}
+			header.Set(key, typed)
+		case []any:
+			values := make([]string, 0, len(typed))
+			for _, item := range typed {
+				str, ok := item.(string)
+				if !ok || str == "" {
+					continue
+				}
+				values = append(values, str)
+			}
+			if len(values) == 0 {
+				continue
+			}
+			header[key] = values
+		case []string:
+			if len(typed) == 0 {
+				continue
+			}
+			header[key] = append([]string(nil), typed...)
+		}
+	}
+	return header, nil
+}
+
+func mergeHeaders(dst http.Header, extra http.Header, skipKeys map[string]struct{}) {
+	for key, values := range extra {
+		if len(values) == 0 {
+			continue
+		}
+		if _, skip := skipKeys[strings.ToLower(key)]; skip {
+			continue
+		}
+		dst[key] = append([]string(nil), values...)
+	}
 }
 
 func GetWeather(ctx context.Context, call openai.ChatCompletionChunkChoiceDeltaToolCallFunction) (*openai.ChatCompletionToolMessageParamContentUnion, error) {

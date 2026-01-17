@@ -32,6 +32,7 @@ type Model struct {
 	IOLog    int    // 是否记录IO (0/1)
 	Strategy string // 负载均衡策略 默认 lottery
 	Breaker  int    // 是否开启熔断 (0/1)
+	Status   int    // 是否启用 (0/1)
 }
 
 type ModelWithProvider struct {

@@ -4,13 +4,12 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/table";
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -57,9 +56,10 @@ import {
   updateProvider,
   deleteProvider,
   getProviderTemplates,
-  getProviderModels
+  getProviderModels,
+  getProvidersStats
 } from "@/lib/api";
-import type { Provider, ProviderTemplate, ProviderModel } from "@/lib/api";
+import type { Provider, ProviderTemplate, ProviderModel, ProviderStatsItem } from "@/lib/api";
 import { toast } from "sonner";
 import { ExternalLink, Pencil, Trash2, Boxes } from "lucide-react";
 
@@ -74,12 +74,44 @@ const parseConfigJson = (raw?: string | null): Record<string, unknown> | null =>
   }
 };
 
-const getConfigBaseUrl = (config: string): string => {
-  const parsed = parseConfigJson(config);
-  const v = parsed?.base_url;
-  return typeof v === "string" && v ? v : "未设置";
+const getConsoleFavicon = (consoleUrl?: string): string => {
+  if (!consoleUrl) return "";
+  try {
+    const url = new URL(consoleUrl);
+    return `${url.origin}/favicon.ico`;
+  } catch {
+    return "";
+  }
 };
 
+const ProviderFavicon = ({
+  consoleUrl,
+  fallback,
+}: {
+  consoleUrl?: string;
+  fallback: string;
+}) => {
+  const [failed, setFailed] = useState(false);
+  const src = getConsoleFavicon(consoleUrl);
+  const label = (fallback || "?").slice(0, 1).toUpperCase();
+
+  if (!src || failed) {
+    return (
+      <span className="size-4 rounded-full bg-muted/70 text-[9px] text-muted-foreground inline-flex items-center justify-center">
+        {label}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={label}
+      className="size-4 rounded-full border border-border/60"
+      onError={() => setFailed(true)}
+    />
+  );
+};
 // 定义表单验证模式
 const formSchema = z.object({
   name: z.string().min(1, { message: "提供商名称不能为空" }),
@@ -104,6 +136,14 @@ export default function ProvidersPage() {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [structuredConfigEnabled, setStructuredConfigEnabled] = useState(false);
   const configCacheRef = useRef<Record<string, string>>({});
+  const statsRequestRef = useRef(0);
+  const [providerStats, setProviderStats] = useState<Record<number, {
+    rpmCount: number | null;
+    rpmLoaded: boolean;
+    ipLockUntil: string | null;
+    ipLockLoaded: boolean;
+    ipLocked: boolean;
+  }>>({});
 
   // 筛选条件
   const [nameFilter, setNameFilter] = useState<string>("");
@@ -181,6 +221,7 @@ export default function ProvidersPage() {
 
       const data = await getProviders({ name, type });
       setProviders(data);
+      void fetchProviderStats(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error(`获取提供商列表失败: ${message}`);
@@ -188,6 +229,61 @@ export default function ProvidersPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchProviderStats = async (items: Provider[]) => {
+    if (items.length === 0) {
+      setProviderStats({});
+      return;
+    }
+    const requestId = ++statsRequestRef.current;
+    setProviderStats((prev) => {
+      const next: Record<number, {
+        rpmCount: number | null;
+        rpmLoaded: boolean;
+        ipLockUntil: string | null;
+        ipLockLoaded: boolean;
+        ipLocked: boolean;
+      }> = {};
+      for (const provider of items) {
+        const existing = prev[provider.ID];
+        next[provider.ID] = {
+          rpmCount: existing?.rpmCount ?? null,
+          rpmLoaded: false,
+          ipLockUntil: existing?.ipLockUntil ?? null,
+          ipLockLoaded: false,
+          ipLocked: existing?.ipLocked ?? false,
+        };
+      }
+      return next;
+    });
+
+    let statsList: ProviderStatsItem[] = [];
+    try {
+      statsList = await getProvidersStats(items.map((provider) => provider.ID));
+    } catch (err) {
+      if (requestId !== statsRequestRef.current) return;
+      toast.error("获取提供商状态失败");
+      return;
+    }
+
+    if (requestId !== statsRequestRef.current) {
+      return;
+    }
+
+    const statsMap = new Map(statsList.map((item) => [item.provider_id, item]));
+    const next: Record<number, { rpmCount: number | null; rpmLoaded: boolean; ipLockUntil: string | null; ipLockLoaded: boolean; ipLocked: boolean }> = {};
+    for (const provider of items) {
+      const item = statsMap.get(provider.ID);
+      next[provider.ID] = {
+        rpmCount: item ? item.rpm_count ?? null : null,
+        rpmLoaded: item ? item.rpm_loaded ?? true : false,
+        ipLockUntil: item ? item.lock_until ?? null : null,
+        ipLockLoaded: item ? item.ip_lock_loaded ?? true : false,
+        ipLocked: item ? item.locked ?? false : false,
+      };
+    }
+    setProviderStats(next);
   };
 
   const fetchProviderTemplates = async () => {
@@ -348,7 +444,6 @@ export default function ProvidersPage() {
   };
 
   const hasFilter = nameFilter.trim() !== "" || typeFilter !== "all";
-
   return (
     <div className="h-full min-h-0 flex flex-col gap-2 p-1">
       <div className="flex flex-col gap-2 flex-shrink-0">
@@ -409,145 +504,109 @@ export default function ProvidersPage() {
           </div>
         ) : (
           <div className="h-full flex flex-col">
-            <div className="hidden sm:block flex-1 overflow-y-auto">
-              <div className="w-full">
-                <Table className="min-w-[1200px]">
-	                  <TableHeader className="z-10 sticky top-0 bg-secondary/80 text-secondary-foreground">
-	                    <TableRow>
-	                      <TableHead>序号</TableHead>
-	                      <TableHead>名称</TableHead>
-	                      <TableHead>类型</TableHead>
-	                      <TableHead>配置</TableHead>
-	                      <TableHead>控制台</TableHead>
-                      <TableHead>RPM限制</TableHead>
-                      <TableHead>IP锁定(分钟)</TableHead>
-                      <TableHead>操作</TableHead>
-                    </TableRow>
-	                  </TableHeader>
-	                  <TableBody>
-	                    {providers.map((provider, index) => (
-	                      <TableRow key={provider.ID}>
-	                        <TableCell className="font-mono text-xs text-muted-foreground">{index + 1}</TableCell>
-	                        <TableCell className="font-medium">{provider.Name}</TableCell>
-	                        <TableCell className="text-sm">{provider.Type}</TableCell>
-	                        <TableCell className="text-xs text-muted-foreground font-mono">
-	                          {getConfigBaseUrl(provider.Config)}
-                        </TableCell>
-                        <TableCell>
+            <div className="flex-1 min-h-0 overflow-y-auto p-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
+                {providers.map((provider) => {
+                  const stats = providerStats[provider.ID];
+                  const rpmLoaded = stats?.rpmLoaded ?? false;
+                  const rpmCurrent = stats?.rpmCount ?? 0;
+                  const rpmLimit = provider.RpmLimit || 0;
+                  const rpmRatio = rpmLoaded
+                    ? (rpmLimit > 0 ? Math.min(100, (rpmCurrent / rpmLimit) * 100) : 100)
+                    : 0;
+                  const lockTotal = provider.IpLockMinutes || 0;
+                  const ipLockLoaded = stats?.ipLockLoaded ?? false;
+                  let lockRemaining = 0;
+                  if (ipLockLoaded && lockTotal > 0 && stats?.ipLocked && stats?.ipLockUntil) {
+                    const remainingMs = new Date(stats.ipLockUntil).getTime() - Date.now();
+                    if (remainingMs > 0) {
+                      lockRemaining = Math.ceil(remainingMs / 60000);
+                    }
+                  }
+                  const lockRatio = ipLockLoaded && lockTotal > 0 ? Math.min(100, (lockRemaining / lockTotal) * 100) : 0;
+                  const rpmLabel = rpmLoaded ? (rpmLimit > 0 ? `${rpmCurrent}/${rpmLimit}` : `${rpmCurrent}/∞`) : "--/--";
+                  const lockLabel = ipLockLoaded ? (lockTotal > 0 ? `${lockRemaining}/${lockTotal}分` : "未启用") : "--/--";
+                  return (
+                    <Card key={provider.ID} className="py-4 shadow-sm">
+                    <CardHeader className="pb-2 sm:px-4 px-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <CardTitle className="text-base truncate" title={provider.Name}>
+                            {provider.Name}
+                          </CardTitle>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                            <span className="inline-flex items-center gap-1">
+                              <ProviderFavicon consoleUrl={provider.Console} fallback={provider.Type || "?"} />
+                              <span>类型: {provider.Type || "未知"}</span>
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
                           {provider.Console ? (
                             <Button
                               title={provider.Console}
                               variant="ghost"
                               size="icon"
+                              className="h-7 w-7"
                               onClick={() => window.open(provider.Console, '_blank')}
                             >
-                              <ExternalLink className="h-2 w-2" />
+                              <ExternalLink className="h-3.5 w-3.5" />
                             </Button>
                           ) : (
-                            <Button variant="ghost" size="icon" disabled>
-                              <ExternalLink className="h-2 w-2 opacity-50" />
+                            <Button variant="ghost" size="icon" className="h-7 w-7" disabled>
+                              <ExternalLink className="h-3.5 w-3.5 opacity-50" />
                             </Button>
                           )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center">
-                            <span className={`text-sm font-medium ${provider.RpmLimit > 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
-                              {provider.RpmLimit > 0 ? provider.RpmLimit : '无限制'}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center">
-                            <span className={`text-sm font-medium ${provider.IpLockMinutes > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                              {provider.IpLockMinutes > 0 ? `${provider.IpLockMinutes}分钟` : '不锁定'}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            <Button variant="outline" size="icon" onClick={() => openEditDialog(provider)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button variant="secondary" size="icon" onClick={() => openModelsDialog(provider.ID)}>
-                              <Boxes className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="destructive" size="icon" onClick={() => openDeleteDialog(provider.ID)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>确定要删除这个提供商吗？</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    此操作无法撤销。这将永久删除该提供商。
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel onClick={() => setDeleteId(null)}>取消</AlertDialogCancel>
-                                  <AlertDialogAction onClick={handleDelete}>确认删除</AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-	            </div>
-	            <div className="sm:hidden flex-1 min-h-0 overflow-y-auto px-2 py-3 divide-y divide-border">
-	              {providers.map((provider, index) => (
-	                <div key={provider.ID} className="py-3 space-y-3">
-	                  <div className="flex items-start justify-between gap-2">
-	                    <div className="min-w-0 flex-1">
-	                      <div className="flex items-center gap-1">
-                        <h3 className="font-semibold text-sm truncate">{provider.Name}</h3>
-                        {provider.Console ? (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5"
-                            onClick={() => window.open(provider.Console, '_blank')}
-                          >
-                            <ExternalLink className="h-2.5 w-2.5" />
-                          </Button>
-                        ) : (
-                          <Button variant="ghost" size="icon" disabled className="h-5 w-5">
-                            <ExternalLink className="h-2.5 w-2.5 opacity-50" />
-                          </Button>
-                        )}
-	                      </div>
-	                      <div className="flex items-center gap-2 flex-wrap">
-	                        <p className="text-[11px] text-muted-foreground">序号: {index + 1}</p>
-	                        <p className="text-[11px] text-muted-foreground">类型: {provider.Type || "未知"}</p>
-	                      </div>
-	                      <div className="flex items-center gap-2 flex-wrap mt-1">
-	                        <p className="text-[11px] text-muted-foreground">
-	                          RPM: <span className={`font-medium ${provider.RpmLimit > 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
-                            {provider.RpmLimit > 0 ? provider.RpmLimit : '无限制'}
-                          </span>
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          IP锁定: <span className={`font-medium ${provider.IpLockMinutes > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                            {provider.IpLockMinutes > 0 ? `${provider.IpLockMinutes}分钟` : '不锁定'}
-                          </span>
-                        </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-1.5">
-                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => openEditDialog(provider)}>
-                        <Pencil className="h-3.5 w-3.5" />
+                    </CardHeader>
+                    <CardContent className="sm:px-4 px-3 space-y-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground w-12">RPM</span>
+                        <div
+                          className="relative h-2 flex-1 rounded-full bg-muted/70 overflow-hidden"
+                          title={rpmLoaded ? (rpmLimit > 0 ? `当前 ${rpmCurrent} / 限制 ${rpmLimit}` : "无限制") : "加载中"}
+                        >
+                          <div
+                            className={`h-full rounded-full ${rpmLimit > 0 ? "bg-amber-500/70" : "bg-emerald-500/50"}`}
+                            style={{
+                              width: `${rpmLimit > 0 ? Math.round(rpmRatio) : 100}%`
+                            }}
+                          />
+                        </div>
+                        <span className="text-[11px] text-muted-foreground tabular-nums w-16 text-right">
+                          {rpmLabel}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground w-12">IP锁定</span>
+                        <div
+                          className="relative h-2 flex-1 rounded-full bg-muted/70 overflow-hidden"
+                          title={ipLockLoaded ? (lockTotal > 0 ? `剩余 ${lockRemaining} / ${lockTotal} 分钟` : "未启用") : "加载中"}
+                        >
+                          <div
+                            className={`h-full rounded-full ${lockTotal > 0 ? "bg-rose-500/60" : "bg-muted/40"}`}
+                            style={{
+                              width: `${lockTotal > 0 ? Math.round(lockRatio) : 0}%`
+                            }}
+                          />
+                        </div>
+                        <span className="text-[11px] text-muted-foreground tabular-nums w-16 text-right">
+                          {lockLabel}
+                        </span>
+                      </div>
+                    </CardContent>
+                    <CardFooter className="sm:px-4 px-3 pt-2 gap-2">
+                      <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => openEditDialog(provider)}>
+                        <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="secondary" size="icon" className="h-7 w-7" onClick={() => openModelsDialog(provider.ID)}>
-                        <Boxes className="h-3.5 w-3.5" />
+                      <Button variant="secondary" size="icon" className="h-8 w-8" onClick={() => openModelsDialog(provider.ID)}>
+                        <Boxes className="h-4 w-4" />
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => openDeleteDialog(provider.ID)}>
-                            <Trash2 className="h-3.5 w-3.5" />
+                          <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => openDeleteDialog(provider.ID)}>
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
@@ -563,10 +622,11 @@ export default function ProvidersPage() {
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                    </CardFooter>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}

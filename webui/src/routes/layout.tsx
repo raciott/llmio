@@ -6,16 +6,13 @@ import {
   FaHome,
   FaCloud,
   FaRobot,
-  FaLink,
   FaFileAlt,
   FaSignOutAlt,
-  FaChevronLeft,
-  FaChevronRight,
   FaCog,
   FaKey,
   FaSnowflake,
   FaHeartbeat,
-  FaLock
+  FaAtom
 } from "react-icons/fa";
 import { useTheme } from "@/components/theme-provider";
 import { useSnow } from "@/components/snow-effect";
@@ -29,7 +26,6 @@ import {
 } from "@/components/ui/dialog";
 
 export default function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [version, setVersion] = useState("dev");
   const [latestRelease, setLatestRelease] = useState<GitHubRelease | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
@@ -37,10 +33,6 @@ export default function Layout() {
   const { snowEnabled, setSnowEnabled } = useSnow();
   const navigate = useNavigate();
   const location = useLocation(); // 用于高亮当前选中的菜单
-
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen);
-  };
 
   useEffect(() => {
     let active = true;
@@ -90,55 +82,58 @@ export default function Layout() {
   const navItems = [
     { to: "/", label: "首页", icon: <FaHome /> },
     { to: "/health-ui", label: "健康监控", icon: <FaHeartbeat /> },
-    { to: "/token-locks", label: "Token 锁定", icon: <FaLock /> },
     { to: "/providers", label: "提供商管理", icon: <FaCloud /> },
     { to: "/models", label: "模型管理", icon: <FaRobot /> },
-    { to: "/model-providers", label: "模型提供商关联", icon: <FaLink /> },
     { to: "/logs", label: "请求日志", icon: <FaFileAlt /> },
     { to: "/auth-keys", label: "API Key 管理", icon: <FaKey /> },
     { to: "/config", label: "系统配置", icon: <FaCog /> },
   ];
 
-  // 侧边栏宽度常量，方便统一管理
-  const WIDTH_EXPANDED = "min-w-48";
-  const WIDTH_COLLAPSED = "min-w-14";
-
   return (
     <div className="flex flex-col h-screen w-full dark:bg-gray-900 transition-colors duration-300">
       
       {/* 1. 顶部栏 Header */}
-      <header className="border-b bg-background flex items-center justify-between p-3 flex-shrink-0 shadow-sm z-20">
-        <div className="font-bold text-xl flex items-center gap-2">
-          <span className="text-primary text-2xl">LLMIO</span> 
-        </div>
+      <header className="bg-background flex items-center flex-shrink-0 z-20">
+        <div className="mx-auto flex w-full max-w-[1200px] items-center justify-between px-3 py-3 md:px-4">
+          <div className="group flex items-center gap-2 text-xl font-bold">
+            <span className="inline-flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary ring-1 ring-primary/20 transition-all duration-300 group-hover:bg-primary/20 group-hover:ring-primary/40 group-hover:shadow-md">
+              <FaAtom className="size-4 transition-transform duration-300 group-hover:rotate-12 group-hover:scale-105" />
+            </span>
+            <span
+              className="text-primary text-2xl transition-all duration-300 group-hover:text-transparent group-hover:bg-clip-text"
+              style={{ backgroundImage: "linear-gradient(90deg, hsl(var(--primary)), hsl(var(--foreground)))" }}
+            >
+              llmio
+            </span> 
+          </div>
 
-        <div className="flex items-center gap-2">
-          <Badge
-            variant="outline"
-            className="text-muted-foreground cursor-pointer hover:bg-accent transition-colors"
-            onClick={() => latestRelease && setShowUpdateDialog(true)}
-            title={latestRelease ? `有新版本 ${latestRelease.tag_name} 可用` : '当前版本'}
-          >
-            {version}
-            {latestRelease && (
-              <span className="ml-1 text-xs text-red-500">●</span>
-            )}
-          </Badge>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`hover:bg-accent hover:text-accent-foreground ${snowEnabled ? 'text-blue-400' : ''}`}
-            onClick={() => setSnowEnabled(!snowEnabled)}
-            title={snowEnabled ? "关闭下雪效果" : "开启下雪效果"}
-          >
-            <FaSnowflake className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hover:bg-accent hover:text-accent-foreground"
-            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-          >
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="text-muted-foreground cursor-pointer hover:bg-accent transition-colors"
+              onClick={() => latestRelease && setShowUpdateDialog(true)}
+              title={latestRelease ? `有新版本 ${latestRelease.tag_name} 可用` : '当前版本'}
+            >
+              {version}
+              {latestRelease && (
+                <span className="ml-1 text-xs text-red-500">●</span>
+              )}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`hover:bg-accent hover:text-accent-foreground ${snowEnabled ? 'text-blue-400' : ''}`}
+              onClick={() => setSnowEnabled(!snowEnabled)}
+              title={snowEnabled ? "关闭下雪效果" : "开启下雪效果"}
+            >
+              <FaSnowflake className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hover:bg-accent hover:text-accent-foreground"
+              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            >
             <svg 
               xmlns="http://www.w3.org/2000/svg" 
               width="24" height="24" viewBox="0 0 24 24" 
@@ -163,64 +158,40 @@ export default function Layout() {
             <FaSignOutAlt />
           </Button>
         </div>
+        </div>
       </header>
 
       {/* 2. 下方主体区域 */}
-      <div className="flex overflow-y-hidden flex-1 min-w-0">
+      <div className="flex-1 min-w-0">
+        <div className="mx-auto flex h-full w-full max-w-[1200px] px-3 md:px-4">
+          <div className="flex w-full overflow-y-hidden min-w-0">
         
         {/* 左侧侧边栏 Sidebar */}
         <aside 
-          className={`
-            flex flex-col border-r bg-background/95 transition-all duration-200 ease-in-out
-            ${sidebarOpen ? WIDTH_EXPANDED : WIDTH_COLLAPSED}
-          `}
+          className="mr-4 mt-3 md:mt-5 flex w-16 shrink-0 flex-col items-center self-start rounded-[30px] bg-card/90 py-5 shadow-[0_12px_32px_rgba(0,0,0,0.12)] ring-1 ring-border/40 backdrop-blur-sm"
         >
-          <nav className="flex-1 overflow-y-auto py-4">
-            <ul className="space-y-1">
+          <nav>
+            <ul className="flex flex-col items-center gap-3">
               {navItems.map((item) => {
                 const isActive = location.pathname === item.to;
                 return (
                   <li key={item.to}>
                     <Link to={item.to}>
-                      <div 
+                      <div
                         className={`
-                          group flex items-center h-10 mx-2 rounded-md transition-colors relative overflow-hidden whitespace-nowrap
-                          ${isActive 
-                            ? "bg-primary text-primary-foreground shadow-sm" // 选中状态
-                            : "hover:bg-accent hover:text-accent-foreground text-muted-foreground" // 默认状态
+                          group relative flex size-11 items-center justify-center rounded-2xl transition-all duration-200
+                          ${isActive
+                            ? "bg-amber-100 text-amber-900 shadow-sm ring-1 ring-amber-200/80 dark:bg-amber-200/10 dark:text-amber-200 dark:ring-amber-200/30"
+                            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                           }
                         `}
-                        title={!sidebarOpen ? item.label : ""}
+                        title={item.label}
+                        aria-label={item.label}
                       >
-                        {/* 
-                          关键点：图标容器
-                          永远固定为 w-12 (48px) 或 w-16 (相当于收起时的宽度)，
-                          并且 flex-shrink-0 防止被挤压。
-                          这样无论侧边栏多宽，图标相对于左侧的位置永远不变。
-                        */}
-                        <div className={`
-                           flex items-center justify-center flex-shrink-0 h-full
-                           ${sidebarOpen ? "w-10" : "w-full"} 
-                           transition-all duration-300
-                        `}>
-                          <span className="text-lg">{item.icon}</span>
-                        </div>
-                        
-                        {/* 
-                           关键点：文字容器
-                           通过 width, opacity, translate 组合实现平滑过渡
-                        */}
-                        <span 
-                          className={`
-                            font-medium transition-all duration-300 ease-in-out origin-left
-                            ${sidebarOpen 
-                              ? "w-auto opacity-100 translate-x-0 ml-2" 
-                              : "w-0 opacity-0 -translate-x-4 ml-0"
-                            }
-                          `}
-                        >
-                          {item.label}
+                        <span className="text-lg transition-transform duration-200 group-hover:scale-105">
+                          {item.icon}
                         </span>
+                        <span className="sr-only">{item.label}</span>
                       </div>
                     </Link>
                   </li>
@@ -228,37 +199,6 @@ export default function Layout() {
               })}
             </ul>
           </nav>
-
-          {/* 底部切换按钮 */}
-          <div className="p-2 mt-auto">
-            <Button
-              variant="ghost"
-              onClick={toggleSidebar}
-              className={`
-                w-full h-12 flex items-center p-0 hover:bg-accent transition-all duration-300
-              `}
-            >
-              {/* 同样的逻辑：图标容器固定宽度 */}
-              <div className={`
-                 flex items-center justify-center flex-shrink-0 h-full
-                 ${sidebarOpen ? "w-12" : "w-full"}
-                 transition-all duration-300
-              `}>
-                 {sidebarOpen ? <FaChevronLeft /> : <FaChevronRight />}
-              </div>
-              
-              <span className={`
-                whitespace-nowrap transition-all duration-300 ease-in-out overflow-hidden
-                ${sidebarOpen 
-                  ? "w-auto opacity-100 translate-x-0 ml-2" 
-                  : "w-0 opacity-0 -translate-x-4 ml-0"
-                }
-              `}>
-                收起菜单
-              </span>
-            </Button>
-          </div>
-
         </aside>
 
         {/* 右侧主内容区域 */}
@@ -267,6 +207,8 @@ export default function Layout() {
              <Outlet />
           </div>
         </main>
+          </div>
+        </div>
       </div>
 
       {/* Update Dialog */}

@@ -23,6 +23,8 @@ export interface Model {
   Strategy: string;
   // 后端当前返回为 0/1（对应 models.breaker）
   Breaker?: number | null;
+  // 后端当前返回为 0/1（对应 models.status）
+  Status?: number | null;
 }
 
 export interface ModelWithProvider {
@@ -282,6 +284,13 @@ export async function updateModel(id: number, model: {
   });
 }
 
+export async function updateModelStatus(id: number, status: boolean): Promise<Model> {
+  return apiRequest<Model>(`/models/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
 export async function deleteModel(id: number): Promise<void> {
   await apiRequest<void>(`/models/${id}`, {
     method: 'DELETE',
@@ -493,8 +502,20 @@ export async function getProviderTemplates(): Promise<ProviderTemplate[]> {
   return apiRequest<ProviderTemplate[]>('/providers/template');
 }
 
-export async function getTokenLocks(): Promise<TokenLock[]> {
-  return apiRequest<TokenLock[]>('/limiter/token-locks');
+export interface ProviderStatsItem {
+  provider_id: number;
+  rpm_count: number;
+  rpm_loaded: boolean;
+  locked: boolean;
+  ip_lock_loaded: boolean;
+  lock_until?: string;
+}
+
+export async function getProvidersStats(providerIds: number[]): Promise<ProviderStatsItem[]> {
+  return apiRequest<ProviderStatsItem[]>('/providers/stats', {
+    method: 'POST',
+    body: JSON.stringify({ provider_ids: providerIds }),
+  });
 }
 
 // Provider Models API functions
@@ -676,19 +697,6 @@ export interface ProviderHealth {
   failedRequests: number;
   lastError?: string;
   models: ModelHealth[]; // 该提供商下的模型列表
-}
-
-// Token 锁定（从 Redis 读取）
-export interface TokenLock {
-  modelWithProviderId: number;
-  modelId: number;
-  modelName: string;
-  providerId: number;
-  providerName: string;
-  providerModel: string;
-  tokenId: number;
-  ttlSeconds: number;
-  lockedUntil: string;
 }
 
 export interface SystemHealth {

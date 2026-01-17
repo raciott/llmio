@@ -1,17 +1,11 @@
-import { useState, useEffect, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/table";
+  Card,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -21,8 +15,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Form,
@@ -48,30 +40,74 @@ import {
   getModels,
   createModel,
   updateModel,
+  updateModelStatus,
   deleteModel,
 } from "@/lib/api";
 import type { Model } from "@/lib/api";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { ModelProvidersPanel } from "@/routes/model-providers";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Search, Pencil, Trash2, Link } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  Plus,
+  Pencil,
+  Trash2,
+  RefreshCw,
+  Timer,
+} from "lucide-react";
+import hunyuanIcon from "@/assets/modelIcon/hunyuan.svg";
+import doubaoIcon from "@/assets/modelIcon/doubao.svg";
+import grokIcon from "@/assets/modelIcon/grok.svg";
+import qwenIcon from "@/assets/modelIcon/qwen.svg";
+import minimaxIcon from "@/assets/modelIcon/minimax.svg";
+import openaiIcon from "@/assets/modelIcon/openai.svg";
+import claudeIcon from "@/assets/modelIcon/claude.svg";
+import geminiIcon from "@/assets/modelIcon/gemini.svg";
 
-type MobileInfoItemProps = {
-  label: string;
-  value: ReactNode;
+type ModelIconConfig = {
+  test: RegExp;
+  src: string;
+  alt: string;
 };
 
-const MobileInfoItem = ({ label, value }: MobileInfoItemProps) => (
-  <div className="space-y-1">
-    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{label}</p>
-    <div className="text-sm font-medium break-words">{value}</div>
-  </div>
-);
+const modelIconConfigs: ModelIconConfig[] = [
+  { test: /hunyuan/i, src: hunyuanIcon, alt: "Hunyuan" },
+  { test: /doubao|ark/i, src: doubaoIcon, alt: "Doubao" },
+  { test: /grok|xai/i, src: grokIcon, alt: "Grok" },
+  { test: /qwen|tongyi/i, src: qwenIcon, alt: "Qwen" },
+  { test: /minimax|abab/i, src: minimaxIcon, alt: "MiniMax" },
+  { test: /openai|gpt|o1|o3|o4/i, src: openaiIcon, alt: "OpenAI" },
+  { test: /claude|anthropic/i, src: claudeIcon, alt: "Claude" },
+  { test: /gemini|google/i, src: geminiIcon, alt: "Gemini" },
+];
 
-const renderStrategy = (strategy?: string) =>
-  strategy === "rotor" ? "Rotor" : "Lottery";
+const ModelIcon = ({ name }: { name: string }) => {
+  const config = modelIconConfigs.find((item) => item.test.test(name));
+  const fallback = (name || "M").slice(0, 2).toUpperCase();
 
-type StrategyFilter = "all" | "lottery" | "rotor";
-type IOLogFilter = "all" | "true" | "false";
+  if (!config) {
+    return (
+      <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
+        {fallback}
+      </div>
+    );
+  }
+
+  return (
+    <div className="size-12 rounded-full bg-muted/60 flex items-center justify-center">
+      <img src={config.src} alt={config.alt} className="size-6" />
+    </div>
+  );
+};
 
 // 定义表单验证模式
 const formSchema = z.object({
@@ -82,23 +118,22 @@ const formSchema = z.object({
   io_log: z.boolean(),
   strategy: z.enum(["lottery", "rotor"]),
   breaker: z.boolean(),
+  status: z.boolean(),
 });
 
 export default function ModelsPage() {
-  const navigate = useNavigate();
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<Model | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [total, setTotal] = useState(0);
+  const [pageSize] = useState(12);
   const [pages, setPages] = useState(0);
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [strategyFilter, setStrategyFilter] = useState<StrategyFilter>("all");
-  const [ioLogFilter, setIoLogFilter] = useState<IOLogFilter>("all");
+  const [providerPanelOpen, setProviderPanelOpen] = useState(false);
+  const [providerPanelModel, setProviderPanelModel] = useState<Model | null>(null);
 
   // 初始化表单
   const form = useForm<z.infer<typeof formSchema>>({
@@ -111,6 +146,7 @@ export default function ModelsPage() {
       io_log: false,
       strategy: "lottery",
       breaker: false,
+      status: true,
     },
   });
 
@@ -129,11 +165,8 @@ export default function ModelsPage() {
         page,
         page_size: pageSize,
         search: searchTerm || undefined,
-        strategy: strategyFilter === "all" ? undefined : strategyFilter,
-        io_log: ioLogFilter === "all" ? undefined : (ioLogFilter as "true" | "false"),
       });
       setModels(response.data);
-      setTotal(response.total);
       setPages(response.pages);
       const totalPages = response.pages || 0;
       if (totalPages > 0 && page > totalPages) {
@@ -152,7 +185,7 @@ export default function ModelsPage() {
 
   useEffect(() => {
     fetchModels();
-  }, [page, pageSize, searchTerm, strategyFilter, ioLogFilter]);
+  }, [page, pageSize, searchTerm]);
 
   const handleCreate = async (values: z.infer<typeof formSchema>) => {
     try {
@@ -187,10 +220,14 @@ export default function ModelsPage() {
         strategy: values.strategy,
         breaker: values.breaker,
       });
+      const previousEnabled = editingModel.Status == null ? true : Number(editingModel.Status) === 1;
+      if (previousEnabled !== values.status) {
+        await updateModelStatus(editingModel.ID, values.status);
+      }
       setOpen(false);
       toast.success(`模型: ${values.name} 更新成功`);
       setEditingModel(null);
-      form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, io_log: false, strategy: "lottery", breaker: false });
+      form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, io_log: false, strategy: "lottery", breaker: false, status: true });
       await fetchModels();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -216,6 +253,7 @@ export default function ModelsPage() {
 
   const openEditDialog = (model: Model) => {
     setEditingModel(model);
+    const statusEnabled = model.Status == null ? true : Number(model.Status) === 1;
     form.reset({
       name: model.Name,
       remark: model.Remark,
@@ -224,13 +262,19 @@ export default function ModelsPage() {
       io_log: Boolean(model.IOLog),
       strategy: model.Strategy === "rotor" ? "rotor" : "lottery",
       breaker: Boolean(model.Breaker),
+      status: statusEnabled,
     });
     setOpen(true);
   };
 
+  const openProviderPanel = (model: Model) => {
+    setProviderPanelModel(model);
+    setProviderPanelOpen(true);
+  };
+
   const openCreateDialog = () => {
     setEditingModel(null);
-    form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, io_log: false, strategy: "lottery", breaker: false });
+    form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, io_log: false, strategy: "lottery", breaker: false, status: true });
     setOpen(true);
   };
 
@@ -244,80 +288,59 @@ export default function ModelsPage() {
     setPage(nextPage);
   };
 
-  const handlePageSizeChange = (size: number) => {
-    setPageSize(size);
-    setPage(1);
-  };
-
   return (
     <div className="h-full min-h-0 flex flex-col gap-2 p-1">
       <div className="flex flex-col gap-2 flex-shrink-0">
-        <div className="flex items-start justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <h2 className="text-2xl font-bold tracking-tight">模型管理</h2>
           </div>
-        </div>
-        <div className="flex flex-col gap-2 flex-shrink-0">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
-            <div className="flex flex-col gap-1 text-xs lg:min-w-0">
-              <Label className="text-[11px] text-muted-foreground uppercase tracking-wide">搜索</Label>
-              <div className="relative">
-                <Search className="size-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="按名称搜索"
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  className="h-9 pl-8 text-sm"
-                />
-              </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="搜索模型"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                className="h-8 w-44 rounded-full pl-9 text-xs bg-muted/60 border-transparent focus-visible:ring-1 focus-visible:ring-primary/40"
+              />
             </div>
-            <div className="flex flex-col gap-1 text-xs lg:min-w-0">
-              <Label className="text-[11px] text-muted-foreground uppercase tracking-wide">负载策略</Label>
-              <Select
-                value={strategyFilter}
-                onValueChange={(value) => {
-                  setStrategyFilter(value as StrategyFilter);
-                  setPage(1);
-                }}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full bg-muted/60 text-foreground hover:bg-muted/80"
+              onClick={openCreateDialog}
+              aria-label="添加模型"
+              title="添加模型"
+            >
+              <Plus className="size-4" />
+            </Button>
+            <div className="flex items-center gap-1 rounded-full bg-muted/60 px-2 py-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-full"
+                onClick={() => handlePageChange(page - 1)}
+                disabled={page === 1}
+                aria-label="上一页"
               >
-                <SelectTrigger className="h-8 text-sm px-2 w-full">
-                  <SelectValue placeholder="负载策略" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部</SelectItem>
-                  <SelectItem value="lottery">Lottery</SelectItem>
-                  <SelectItem value="rotor">Rotor</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end col-span-2 sm:col-span-2 lg:col-span-1 gap-2">
-              <div className="flex-1">
-                <Label className="text-[11px] text-muted-foreground uppercase tracking-wide">IO 记录</Label>
-                <Select
-                  value={ioLogFilter}
-                  onValueChange={(value) => {
-                    setIoLogFilter(value as IOLogFilter);
-                    setPage(1);
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-sm px-2 w-full">
-                    <SelectValue placeholder="IO 记录" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部</SelectItem>
-                    <SelectItem value="true">开启</SelectItem>
-                    <SelectItem value="false">关闭</SelectItem>
-                  </SelectContent>
-                </Select>
-
-              </div>
-              <Button onClick={openCreateDialog} className="h-8 text-xs">
-                添加模型
+                <ChevronLeft className="size-4" />
+              </Button>
+              <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                {page}/{Math.max(pages, 1)}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-full"
+                onClick={() => handlePageChange(page + 1)}
+                disabled={page === pages || pages === 0}
+                aria-label="下一页"
+              >
+                <ChevronRight className="size-4" />
               </Button>
             </div>
-
           </div>
-
         </div>
       </div>
       <div className="flex-1 min-h-0 border rounded-md bg-background shadow-sm">
@@ -331,171 +354,89 @@ export default function ModelsPage() {
           </div>
         ) : (
           <div className="h-full flex flex-col">
-            <div className="hidden sm:block flex-1 overflow-y-auto">
-              <div className="w-full">
-                <Table className="min-w-[1100px]">
-	                  <TableHeader className="z-10 sticky top-0 bg-secondary/80 text-secondary-foreground">
-	                    <TableRow>
-	                      <TableHead>序号</TableHead>
-	                      <TableHead>名称</TableHead>
-	                      <TableHead>备注</TableHead>
-	                      <TableHead>重试次数限制</TableHead>
-	                      <TableHead>超时时间(秒)</TableHead>
-                      <TableHead>负载策略</TableHead>
-                      <TableHead>IO 记录</TableHead>
-                      <TableHead>操作</TableHead>
-                    </TableRow>
-	                  </TableHeader>
-	                  <TableBody>
-	                    {models.map((model, index) => (
-	                      <TableRow key={model.ID}>
-	                        <TableCell className="font-mono text-xs text-muted-foreground">
-	                          {(page - 1) * pageSize + index + 1}
-	                        </TableCell>
-	                        <TableCell className="font-medium">{model.Name}</TableCell>
-	                        <TableCell className="max-w-[240px] truncate text-sm" title={model.Remark}>
-	                          {model.Remark || "-"}
-	                        </TableCell>
-                        <TableCell>{model.MaxRetry}</TableCell>
-                        <TableCell>{model.TimeOut}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{renderStrategy(model.Strategy)}</TableCell>
-                        <TableCell>
-                          <span className={model.IOLog ? "text-green-500" : "text-red-500"}>
-                            {model.IOLog ? '✓' : '✗'}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              variant="secondary"
-                              size="icon"
-                              onClick={() => navigate(`/model-providers?modelId=${model.ID}`)}
-                            >
-                              <Link className="h-4 w-4" />
-                            </Button>
-                            <Button variant="outline" size="icon" onClick={() => openEditDialog(model)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="destructive" size="icon" onClick={() => openDeleteDialog(model.ID)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>确定要删除这个模型吗？</AlertDialogTitle>
-                                  <AlertDialogDescription>此操作无法撤销。这将永久删除该模型。</AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel onClick={() => setDeleteId(null)}>取消</AlertDialogCancel>
-                                  <AlertDialogAction onClick={handleDelete}>确认删除</AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
+            <div className="flex-1 min-h-0 overflow-y-auto p-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {models.map((model) => {
+                  return (
+                    <Card
+                      key={model.ID}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openProviderPanel(model)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openProviderPanel(model);
+                        }
+                      }}
+                      className="flex-row items-center gap-3 py-3 px-3 rounded-2xl border border-border/60 bg-card/80 shadow-sm cursor-pointer transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <ModelIcon name={model.Name} />
+                        <div className="min-w-0">
+                          <div className="font-semibold truncate">{model.Name}</div>
+                          {model.Remark ? (
+                            <div className="text-[11px] text-muted-foreground truncate" title={model.Remark}>
+                              {model.Remark}
+                            </div>
+                          ) : null}
+                          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              <RefreshCw className="size-3 text-blue-500" />
+                              <span>重试次数 {model.MaxRetry}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Timer className="size-3 text-amber-500" />
+                              <span>超时 {model.TimeOut}s</span>
+                            </div>
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditDialog(model);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openDeleteDialog(model.ID);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>确定要删除这个模型吗？</AlertDialogTitle>
+                              <AlertDialogDescription>此操作无法撤销。这将永久删除该模型。</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel onClick={() => setDeleteId(null)}>取消</AlertDialogCancel>
+                              <AlertDialogAction onClick={handleDelete}>确认删除</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </Card>
+                  );
+                })}
               </div>
-	            </div>
-	            <div className="sm:hidden flex-1 min-h-0 overflow-y-auto px-2 py-3 divide-y divide-border">
-	              {models.map((model, index) => (
-	                <div key={model.ID} className="py-3 space-y-3">
-	                  <div className="flex items-start justify-between gap-2">
-	                    <div className="min-w-0 flex-1">
-	                      <h3 className="font-semibold text-sm truncate">{model.Name}</h3>
-	                      <p className="text-[11px] text-muted-foreground">
-	                        序号: {(page - 1) * pageSize + index + 1}
-	                      </p>
-	                    </div>
-	                    <div className="flex flex-wrap justify-end gap-1.5">
-	                      <Button variant="secondary" size="icon" className="h-7 w-7" onClick={() => navigate(`/model-providers?modelId=${model.ID}`)}>
-	                        <Link className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => openEditDialog(model)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => openDeleteDialog(model.ID)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>确定要删除这个模型吗？</AlertDialogTitle>
-                            <AlertDialogDescription>此操作无法撤销。这将永久删除该模型。</AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel onClick={() => setDeleteId(null)}>取消</AlertDialogCancel>
-                            <AlertDialogAction onClick={handleDelete}>确认删除</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-                  <div className="text-xs space-y-1">
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">备注</p>
-                    <p className="break-words">{model.Remark || "-"}</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <MobileInfoItem label="重试次数" value={model.MaxRetry} />
-                    <MobileInfoItem label="超时时间" value={`${model.TimeOut} 秒`} />
-                    <MobileInfoItem label="负载策略" value={renderStrategy(model.Strategy)} />
-                    <MobileInfoItem
-                      label="IO 记录"
-                      value={<span className={model.IOLog ? "text-green-600" : "text-red-600"}>{model.IOLog ? '✓' : '✗'}</span>}
-                    />
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         )}
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 flex-shrink-0 border-t pt-2">
-        <div className="text-sm text-muted-foreground whitespace-nowrap">
-          共 {total} 条，第 {page} / {Math.max(pages, 1)} 页
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Select value={String(pageSize)} onValueChange={(value) => handlePageSizeChange(Number(value))}>
-              <SelectTrigger className="h-8 w-[100px] text-xs">
-                <SelectValue placeholder="条数" />
-              </SelectTrigger>
-              <SelectContent>
-                {[10, 20, 50].map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page === 1}
-              aria-label="上一页"
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page === pages || pages === 0}
-              aria-label="下一页"
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        </div>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -511,20 +452,41 @@ export default function ModelsPage() {
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(editingModel ? handleUpdate : handleCreate)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>名称</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <form onSubmit={form.handleSubmit(editingModel ? handleUpdate : handleCreate)} className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-[1fr,auto]">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>名称</FormLabel>
+                      <FormControl>
+                        <Input {...field} className="h-9" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {editingModel ? (
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/50 px-3 py-2">
+                        <FormLabel className="text-xs text-muted-foreground">启用</FormLabel>
+                        <FormControl>
+                          <Switch
+                            checked={field.value === true}
+                            onCheckedChange={(checked) => field.onChange(checked === true)}
+                            aria-label="切换模型启用状态"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
+              </div>
 
               <FormField
                 control={form.control}
@@ -533,23 +495,24 @@ export default function ModelsPage() {
                   <FormItem>
                     <FormLabel>备注</FormLabel>
                     <FormControl>
-                      <Textarea {...field} rows={3} />
+                      <Textarea {...field} rows={2} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <FormField
                   control={form.control}
                   name="max_retry"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>重试次数限制</FormLabel>
+                      <FormLabel>重试次数</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
+                          className="h-9"
                           {...field}
                           onChange={e => field.onChange(+e.target.value)}
                         />
@@ -564,10 +527,11 @@ export default function ModelsPage() {
                   name="time_out"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>超时时间(秒)</FormLabel>
+                      <FormLabel>超时(秒)</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
+                          className="h-9"
                           {...field}
                           onChange={e => field.onChange(+e.target.value)}
                         />
@@ -578,82 +542,57 @@ export default function ModelsPage() {
                 />
               </div>
 
-              <FormField
-                control={form.control}
-                name="io_log"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base">IO 记录</FormLabel>
-                    </div>
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value === true}
-                        onCheckedChange={(checked) => field.onChange(checked === true)}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="io_log"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/50 px-3 py-2">
+                      <FormLabel className="text-xs text-muted-foreground">IO 记录</FormLabel>
+                      <FormControl>
+                        <Switch
+                          checked={field.value === true}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="breaker"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base">熔断</FormLabel>
-                    </div>
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value === true}
-                        onCheckedChange={(checked) => field.onChange(checked === true)}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="breaker"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/50 px-3 py-2">
+                      <FormLabel className="text-xs text-muted-foreground">熔断</FormLabel>
+                      <FormControl>
+                        <Switch
+                          checked={field.value === true}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <FormField
                 control={form.control}
                 name="strategy"
                 render={({ field }) => (
-                  <FormItem className="rounded-lg border p-4 space-y-3">
-                    <div className="flex flex-col gap-1">
-                      <FormLabel className="text-base">负载均衡策略</FormLabel>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {[
-                        {
-                          value: "lottery",
-                          title: "Lottery",
-                          desc: "按权重概率抽取, 适合随机分散流量.",
-                        },
-                        {
-                          value: "rotor",
-                          title: "Rotor",
-                          desc: "按权重循环轮转, 适合需要缓存命中场景.",
-                        },
-                      ].map((option) => (
-                        <label
-                          key={option.value}
-                          className="flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-accent"
-                        >
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value === option.value}
-                              onCheckedChange={(checked) => {
-                                if (checked) field.onChange(option.value);
-                              }}
-                            />
-                          </FormControl>
-                          <div className="space-y-1">
-                            <p className="font-medium leading-none">{option.title}</p>
-                            <p className="text-[13px] text-muted-foreground">{option.desc}</p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
+                  <FormItem>
+                    <FormLabel>负载均衡策略</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="选择策略" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="lottery">抽签（权重随机）</SelectItem>
+                        <SelectItem value="rotor">轮转（权重轮询）</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -669,6 +608,21 @@ export default function ModelsPage() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={providerPanelOpen}
+        onOpenChange={(nextOpen) => {
+          setProviderPanelOpen(nextOpen);
+          if (!nextOpen) {
+            setProviderPanelModel(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl max-h-[88vh] p-4 overflow-hidden">
+          {providerPanelModel ? (
+            <ModelProvidersPanel embedded fixedModel={providerPanelModel} />
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

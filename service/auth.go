@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -55,18 +54,26 @@ func KeyUpdate(keyID uint, usedAt time.Time) {
 }
 
 func backgroundFlush() {
-	for range time.Tick(10 * time.Second) {
-		ctx := context.Background()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
 		mu.Lock()
-		for keyID, item := range updateCounts {
+		pending := updateCounts
+		updateCounts = make(map[uint]KeyUpdateItem) // 清空计数，避免阻塞写入
+		mu.Unlock()
+
+		if len(pending) == 0 {
+			continue
+		}
+
+		ctx := context.Background()
+		for keyID, item := range pending {
 			if err := models.DB.Model(&models.AuthKey{}).WithContext(ctx).Where("id = ?", keyID).Updates(map[string]any{
-				"usage_count":  gorm.Expr(fmt.Sprintf("usage_count + %d", item.Count)),
+				"usage_count":  gorm.Expr("usage_count + ?", item.Count),
 				"last_used_at": item.UsedAt,
 			}).Error; err != nil {
 				slog.Error("Failed to update auth key usage count", "error", err)
 			}
 		}
-		updateCounts = make(map[uint]KeyUpdateItem) // 清空计数
-		mu.Unlock()
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/tidwall/sjson"
@@ -18,12 +19,31 @@ type Anthropic struct {
 	Version string `json:"version"`
 }
 
+func appendQueryParam(rawURL string, key string, value string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	if query.Has(key) {
+		return rawURL, nil
+	}
+	query.Set(key, value)
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
 func (a *Anthropic) BuildReq(ctx context.Context, header http.Header, model string, rawBody []byte) (*http.Request, error) {
 	body, err := sjson.SetBytes(rawBody, "model", model)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/messages", a.BaseURL), bytes.NewReader(body))
+	rawURL := fmt.Sprintf("%s/messages", a.BaseURL)
+	rawURL, err = appendQueryParam(rawURL, "beta", "true")
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", rawURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

@@ -29,22 +29,13 @@ func init() {
 	_ = godotenv.Load()
 
 	ctx := context.Background()
-	// 数据库支持 PostgreSQL / MySQL，通过 DATABASE_TYPE 选择。
-	// - DATABASE_TYPE=postgres|mysql（默认 postgres）
-	// - DATABASE_DSN：连接串（postgres 支持 key=value 或 URL；mysql 支持 DSN 或 mysql:// URL）
-	dbType := strings.TrimSpace(os.Getenv("DATABASE_TYPE"))
+	// 数据库支持 PostgreSQL
+	// - DATABASE_DSN：连接串（支持 key=value 或 URL）
 	dsn := strings.TrimSpace(os.Getenv("DATABASE_DSN"))
-	if dbType == "" {
-		dbType = "postgres"
-	}
 	if dsn == "" {
-		if strings.EqualFold(dbType, "mysql") {
-			dsn = "root:root@tcp(localhost:3306)/llmio?charset=utf8mb4&parseTime=True&loc=Local"
-		} else {
-			dsn = "postgres://postgres:postgres@localhost:5432/llmio?sslmode=disable"
-		}
+		dsn = "postgres://postgres:postgres@localhost:5432/llmio?sslmode=disable"
 	}
-	models.Init(ctx, dbType, dsn)
+	models.Init(ctx, dsn)
 
 	// 初始化首次部署时间（持久化到数据库 configs 表），用于跨重启统计系统总运行时间。
 	if _, err := service.GetOrInitFirstDeployTime(ctx); err != nil {
@@ -197,6 +188,7 @@ func main() {
 		api.GET("/models/select", handler.GetModelList)
 		api.POST("/models", handler.CreateModel)
 		api.PUT("/models/:id", handler.UpdateModel)
+		api.PATCH("/models/:id/status", handler.UpdateModelStatus)
 		api.DELETE("/models/:id", handler.DeleteModel)
 
 		// Model-provider association management
@@ -229,10 +221,7 @@ func main() {
 		// Limiter management and monitoring
 		api.GET("/limiter/stats", handler.GetLimiterStats)
 		api.GET("/limiter/health", handler.GetLimiterHealth)
-		api.GET("/limiter/token-locks", handler.GetTokenLocks)
-		api.GET("/providers/:id/rpm-count", handler.GetProviderRPMCount)
-		api.GET("/providers/:id/ip-lock", handler.GetProviderIPLockStatus)
-		api.DELETE("/providers/:id/ip-lock", handler.ClearProviderIPLock)
+		api.POST("/providers/stats", handler.GetProvidersStats)
 
 		// Provider connectivity test
 		api.GET("/test/:id", handler.ProviderTestHandler)
