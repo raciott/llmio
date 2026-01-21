@@ -542,6 +542,11 @@ export interface AnthropicCountTokens {
   version: string;
 }
 
+export interface AnthropicProxyIPConfig {
+  enabled: boolean;
+  proxy_ip: string;
+}
+
 export const configAPI = {
   getConfig: (key: string) =>
     apiRequest<ConfigResponse>(`/config/${key}`),

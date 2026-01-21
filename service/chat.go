@@ -88,6 +88,13 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 
 	providerMap := providersWithMeta.ProviderMap
 
+	var anthropicProxyIP string
+	if style == consts.StyleAnthropic {
+		if cfg, ok := loadAnthropicProxyIPConfig(ctx); ok {
+			anthropicProxyIP = cfg.ProxyIP
+		}
+	}
+
 	// 收集重试过程中的err日志
 	retryLog := make(chan models.ChatLog, providersWithMeta.MaxRetry)
 	defer close(retryLog)
@@ -189,6 +196,10 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 				}
 			}
 			header := BuildHeaders(reqMeta.Header, withHeader, customHeaders, before.Stream)
+			if anthropicProxyIP != "" && provider.Type == consts.StyleAnthropic {
+				header.Set("X-Forwarded-For", anthropicProxyIP)
+				header.Set("X-Real-IP", anthropicProxyIP)
+			}
 
 			var lastStatus int
 			var lastWas429 bool
@@ -378,6 +389,33 @@ func BuildHeaders(source http.Header, withHeader bool, customHeaders map[string]
 	}
 
 	return header
+}
+
+func loadAnthropicProxyIPConfig(ctx context.Context) (models.AnthropicProxyIPConfig, bool) {
+	config, err := gorm.G[models.Config](models.DB).
+		Where("key = ?", models.KeyAnthropicProxyIP).
+		First(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.AnthropicProxyIPConfig{}, false
+		}
+		slog.Error("读取 Claude 代理 IP 配置失败", "error", err)
+		return models.AnthropicProxyIPConfig{}, false
+	}
+	raw := strings.TrimSpace(config.Value)
+	if raw == "" {
+		return models.AnthropicProxyIPConfig{}, false
+	}
+	var cfg models.AnthropicProxyIPConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		slog.Error("解析 Claude 代理 IP 配置失败", "error", err)
+		return models.AnthropicProxyIPConfig{}, false
+	}
+	cfg.ProxyIP = strings.TrimSpace(cfg.ProxyIP)
+	if !cfg.Enabled || cfg.ProxyIP == "" {
+		return models.AnthropicProxyIPConfig{}, false
+	}
+	return cfg, true
 }
 
 type ProvidersWithMeta struct {

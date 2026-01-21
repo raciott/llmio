@@ -47,6 +47,16 @@ const createEmptyAvailableModels = (): Record<ProviderTypeKey, string[]> => ({
 const isModelEnabled = (value?: number | null): boolean =>
   value == null ? true : Number(value) === 1;
 
+const normalizeProviderType = (raw: string): ProviderTypeKey | null => {
+  const lower = (raw || "").trim().toLowerCase();
+  if (!lower) return null;
+  if (lower === "codex") return "openai_res";
+  if (providerTypeOrder.includes(lower as ProviderTypeKey)) {
+    return lower as ProviderTypeKey;
+  }
+  return null;
+};
+
 type ChartView = "pie" | "ranking";
 
 const SegmentedToggle = ({
@@ -276,9 +286,9 @@ export default function Home() {
       const providerTypeById = new Map<number, ProviderTypeKey>();
 
       providers.forEach((provider) => {
-        const rawType = (provider.Type || "").toLowerCase();
-        if (!providerTypeOrder.includes(rawType as ProviderTypeKey)) return;
-        providerTypeById.set(provider.ID, rawType as ProviderTypeKey);
+        const type = normalizeProviderType(provider.Type || "");
+        if (!type) return;
+        providerTypeById.set(provider.ID, type);
       });
 
       const activeModels = modelOptions.filter((model) => isModelEnabled(model.Status));

@@ -23,7 +23,8 @@ import {
 } from '@/components/ui/form';
 import Loading from '@/components/loading';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { configAPI, type AnthropicCountTokens, testCountTokens } from '@/lib/api';
+import { Switch } from '@/components/ui/switch';
+import { configAPI, type AnthropicCountTokens, type AnthropicProxyIPConfig, testCountTokens } from '@/lib/api';
 import { toast } from 'sonner';
 
 const anthropicConfigSchema = z.object({
@@ -38,8 +39,17 @@ const embeddingConfigSchema = z.object({
   model: z.string().min(1, { message: '模型名称不能为空' }),
 });
 
+const anthropicProxySchema = z.object({
+  enabled: z.boolean(),
+  proxy_ip: z.string().trim(),
+}).refine((data) => !data.enabled || data.proxy_ip.length > 0, {
+  message: '启用代理 IP 时必须填写代理 IP',
+  path: ['proxy_ip'],
+});
+
 type AnthropicConfigForm = z.infer<typeof anthropicConfigSchema>;
 type EmbeddingConfigForm = z.infer<typeof embeddingConfigSchema>;
+type AnthropicProxyForm = z.infer<typeof anthropicProxySchema>;
 
 interface EmbeddingConfig {
   base_url: string;
@@ -58,6 +68,10 @@ export default function ConfigPage() {
   const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfig | null>(null);
   const [embeddingTesting, setEmbeddingTesting] = useState(false);
 
+  // Claude 代理 IP 配置状态
+  const [proxyOpen, setProxyOpen] = useState(false);
+  const [proxyConfig, setProxyConfig] = useState<AnthropicProxyIPConfig | null>(null);
+
   const form = useForm<AnthropicConfigForm>({
     resolver: zodResolver(anthropicConfigSchema),
     defaultValues: {
@@ -73,6 +87,14 @@ export default function ConfigPage() {
       base_url: '',
       api_key: '',
       model: 'text-embedding-3-small',
+    },
+  });
+
+  const proxyForm = useForm<AnthropicProxyForm>({
+    resolver: zodResolver(anthropicProxySchema),
+    defaultValues: {
+      enabled: false,
+      proxy_ip: '',
     },
   });
 
@@ -99,6 +121,20 @@ export default function ConfigPage() {
         }
       } catch (error) {
         console.error('Failed to load embedding config:', error);
+      }
+
+      try {
+        // 获取 Claude 代理 IP 配置
+        const proxyResponse = await configAPI.getConfig('anthropic_proxy_ip');
+        if (proxyResponse.value) {
+          const proxyCfg = JSON.parse(proxyResponse.value) as AnthropicProxyIPConfig;
+          setProxyConfig({
+            enabled: Boolean(proxyCfg.enabled),
+            proxy_ip: proxyCfg.proxy_ip || '',
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load anthropic proxy config:', error);
       }
 
       setLoading(false);
@@ -201,6 +237,26 @@ export default function ConfigPage() {
     }
   };
 
+  const openProxyDialog = () => {
+    proxyForm.reset({
+      enabled: proxyConfig?.enabled ?? false,
+      proxy_ip: proxyConfig?.proxy_ip || '',
+    });
+    setProxyOpen(true);
+  };
+
+  const onProxySubmit = async (values: AnthropicProxyForm) => {
+    try {
+      await configAPI.updateConfig('anthropic_proxy_ip', values);
+      setProxyConfig(values);
+      toast.success('Claude 代理 IP 配置已保存');
+      setProxyOpen(false);
+    } catch (error) {
+      console.error('Failed to save anthropic proxy config:', error);
+      toast.error('保存 Claude 代理 IP 配置失败');
+    }
+  };
+
   if (loading) {
     return <Loading />;
   }
@@ -269,6 +325,34 @@ export default function ConfigPage() {
                 '检测配置'
               )}
             </Button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Claude 代理 IP 配置</CardTitle>
+            <CardDescription>
+              用于覆盖 Claude 接口转发请求的 X-Forwarded-For 与 X-Real-IP
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>启用状态</Label>
+                <p className="text-sm text-muted-foreground">
+                  {proxyConfig?.enabled ? '已启用' : '未启用'}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>代理 IP</Label>
+                <p className="text-sm text-muted-foreground break-all">
+                  {proxyConfig?.proxy_ip || '未配置'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <Button onClick={openProxyDialog}>编辑配置</Button>
           </CardFooter>
         </Card>
 
@@ -384,6 +468,58 @@ export default function ConfigPage() {
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={closeDialog}>
+                  取消
+                </Button>
+                <Button type="submit">保存</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={proxyOpen} onOpenChange={setProxyOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>编辑 Claude 代理 IP 配置</DialogTitle>
+            <DialogDescription>
+              启用后将覆盖转发请求的 X-Forwarded-For 与 X-Real-IP
+            </DialogDescription>
+          </DialogHeader>
+
+          <Form {...proxyForm}>
+            <form onSubmit={proxyForm.handleSubmit(onProxySubmit)} className="space-y-4">
+              <FormField
+                control={proxyForm.control}
+                name="enabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/50 px-3 py-2">
+                    <FormLabel className="text-xs text-muted-foreground">启用代理 IP</FormLabel>
+                    <FormControl>
+                      <Switch
+                        checked={field.value === true}
+                        onCheckedChange={(checked) => field.onChange(checked === true)}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={proxyForm.control}
+                name="proxy_ip"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>代理 IP</FormLabel>
+                    <FormControl>
+                      <Input placeholder="203.0.113.10" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setProxyOpen(false)}>
                   取消
                 </Button>
                 <Button type="submit">保存</Button>
