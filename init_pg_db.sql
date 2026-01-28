@@ -82,6 +82,20 @@ CREATE TABLE IF NOT EXISTS configs (
     deleted_at TIMESTAMPTZ
 );
 
+-- 创建 model_prices 表
+CREATE TABLE IF NOT EXISTS model_prices (
+    id SERIAL PRIMARY KEY,
+    model_id VARCHAR(255) NOT NULL UNIQUE,
+    provider VARCHAR(100) NOT NULL DEFAULT '',
+    input DOUBLE PRECISION NOT NULL DEFAULT 0,
+    output DOUBLE PRECISION NOT NULL DEFAULT 0,
+    cache_read DOUBLE PRECISION NOT NULL DEFAULT 0,
+    cache_write DOUBLE PRECISION NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+
 -- 创建 chat_logs 表
 CREATE TABLE IF NOT EXISTS chat_logs (
     id SERIAL PRIMARY KEY,
@@ -106,10 +120,12 @@ CREATE TABLE IF NOT EXISTS chat_logs (
     completion_tokens BIGINT NOT NULL DEFAULT 0,
     total_tokens BIGINT NOT NULL DEFAULT 0,
     prompt_tokens_details TEXT NOT NULL DEFAULT '{}',
+    total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
 );
+ALTER TABLE chat_logs ADD COLUMN IF NOT EXISTS total_cost DOUBLE PRECISION NOT NULL DEFAULT 0;
 
 -- 创建 chat_io 表
 CREATE TABLE IF NOT EXISTS chat_io (
@@ -138,6 +154,8 @@ CREATE INDEX IF NOT EXISTS idx_model_with_providers_deleted_at ON model_with_pro
 
 CREATE INDEX IF NOT EXISTS idx_auth_keys_key ON auth_keys(key);
 CREATE INDEX IF NOT EXISTS idx_auth_keys_status ON auth_keys(status);
+
+CREATE INDEX IF NOT EXISTS idx_model_prices_model_id ON model_prices(model_id);
 CREATE INDEX IF NOT EXISTS idx_auth_keys_deleted_at ON auth_keys(deleted_at);
 
 CREATE INDEX IF NOT EXISTS idx_configs_key ON configs(key);

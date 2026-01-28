@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import Loading from "@/components/loading";
 import { getLogs, getProviders, getModelOptions, getAuthKeysList, type ChatLog, type Provider, type Model, type AuthKeyItem, getProviderTemplates, cleanLogs } from "@/lib/api";
-import { ChevronLeft, ChevronRight, RefreshCw, Trash2, Eye, EyeOff, Timer, ArrowDown, ArrowUp, Zap } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Trash2, Eye, EyeOff, Timer, ArrowDown, ArrowUp, Zap, Coins } from "lucide-react";
 import hunyuanIcon from "@/assets/modelIcon/hunyuan.svg";
 import doubaoIcon from "@/assets/modelIcon/doubao.svg";
 import grokIcon from "@/assets/modelIcon/grok.svg";
@@ -76,6 +76,11 @@ const DetailCard = ({ label, value, mono = false }: DetailCardProps) => (
 const formatDurationValue = (value?: number) => (typeof value === "number" ? formatDurationMs(value) : "-");
 const formatTokenValue = (value?: number) => (typeof value === "number" ? value.toLocaleString() : "-");
 const formatTpsValue = (value?: number) => (typeof value === "number" ? value.toFixed(2) : "-");
+const formatCostValue = (value?: number) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  const trimmed = value.toFixed(6).replace(/\.?0+$/, "");
+  return `$${trimmed}`;
+};
 
 const parsePromptTokensDetails = (value: ChatLog["prompt_tokens_details"]) => {
   if (!value) return { cached_tokens: 0 };
@@ -412,22 +417,41 @@ export default function LogsPage() {
                               {statusText}
                             </span>
                           </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                            <div className="flex items-center gap-1">
+                          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3 lg:grid-cols-5">
+                            <div className="flex items-center gap-1.5">
                               <Zap className="size-3 text-amber-500" />
-                              <span>首字 {formatDurationMs(durations.first)}</span>
+                              <span className="text-muted-foreground">首字</span>
+                              <span className="tabular-nums text-foreground">
+                                {formatDurationMs(durations.first)}
+                              </span>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5">
                               <Timer className="size-3 text-blue-500" />
-                              <span>总耗时 {formatDurationMs(durations.total)}</span>
+                              <span className="text-muted-foreground">总耗时</span>
+                              <span className="tabular-nums text-foreground">
+                                {formatDurationMs(durations.total)}
+                              </span>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5">
                               <ArrowDown className="size-3 text-emerald-500" />
-                              <span>输入 {formatTokenValue(log.prompt_tokens)}</span>
+                              <span className="text-muted-foreground">输入</span>
+                              <span className="tabular-nums text-foreground">
+                                {formatTokenValue(log.prompt_tokens)}
+                              </span>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5">
                               <ArrowUp className="size-3 text-violet-500" />
-                              <span>输出 {formatTokenValue(log.completion_tokens)}</span>
+                              <span className="text-muted-foreground">输出</span>
+                              <span className="tabular-nums text-foreground">
+                                {formatTokenValue(log.completion_tokens)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Coins className="size-3 text-emerald-600" />
+                              <span className="text-muted-foreground">价格</span>
+                              <span className="tabular-nums text-foreground">
+                                {formatCostValue(log.total_cost)}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -571,6 +595,7 @@ export default function LogsPage() {
                       <DetailCard label="输出" value={formatTokenValue(selectedLog.completion_tokens)} />
                       <DetailCard label="总计" value={formatTokenValue(selectedLog.total_tokens)} />
                       <DetailCard label="缓存" value={formatTokenValue(details.cached_tokens)} />
+                      <DetailCard label="价格" value={formatCostValue(selectedLog.total_cost)} />
                     </>
                   );
                 })()}

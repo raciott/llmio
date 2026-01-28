@@ -84,10 +84,11 @@ func (l ChatLog) WithError(err error) ChatLog {
 }
 
 type Usage struct {
-	PromptTokens        int64  `json:"prompt_tokens" gorm:"column:prompt_tokens"`
-	CompletionTokens    int64  `json:"completion_tokens" gorm:"column:completion_tokens"`
-	TotalTokens         int64  `json:"total_tokens" gorm:"column:total_tokens"`
-	PromptTokensDetails string `json:"prompt_tokens_details" gorm:"column:prompt_tokens_details"` // JSON 字符串
+	PromptTokens        int64   `json:"prompt_tokens" gorm:"column:prompt_tokens"`
+	CompletionTokens    int64   `json:"completion_tokens" gorm:"column:completion_tokens"`
+	TotalTokens         int64   `json:"total_tokens" gorm:"column:total_tokens"`
+	PromptTokensDetails string  `json:"prompt_tokens_details" gorm:"column:prompt_tokens_details"` // JSON 字符串
+	TotalCost           float64 `json:"total_cost" gorm:"column:total_cost"`                       // 总消费
 }
 
 type PromptTokensDetails struct {

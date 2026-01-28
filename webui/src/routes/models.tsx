@@ -63,6 +63,7 @@ import {
   Trash2,
   RefreshCw,
   Timer,
+  Coins,
 } from "lucide-react";
 import hunyuanIcon from "@/assets/modelIcon/hunyuan.svg";
 import doubaoIcon from "@/assets/modelIcon/doubao.svg";
@@ -107,6 +108,13 @@ const ModelIcon = ({ name }: { name: string }) => {
       <img src={config.src} alt={config.alt} className="size-6" />
     </div>
   );
+};
+
+const formatPrice = (value?: number | null) => {
+  if (value == null || !Number.isFinite(value)) {
+    return "--";
+  }
+  return `$${value.toFixed(4)}/M`;
 };
 
 // 定义表单验证模式
@@ -380,14 +388,26 @@ export default function ModelsPage() {
                               {model.Remark}
                             </div>
                           ) : null}
-                          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <RefreshCw className="size-3 text-blue-500" />
-                              <span>重试次数 {model.MaxRetry}</span>
+                          <div className="mt-2 flex items-start justify-between gap-4 text-xs text-muted-foreground">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <RefreshCw className="size-3 text-blue-500" />
+                                <span>重试次数 {model.MaxRetry}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Timer className="size-3 text-amber-500" />
+                                <span>超时 {model.TimeOut}s</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Timer className="size-3 text-amber-500" />
-                              <span>超时 {model.TimeOut}s</span>
+                            <div className="flex flex-col items-end gap-1 text-[11px] text-muted-foreground">
+                              <div className="flex items-center gap-1">
+                                <Coins className="size-3 text-emerald-500" />
+                                <span className="tabular-nums">输入 {formatPrice(model.InputPrice)}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Coins className="size-3 text-emerald-500" />
+                                <span className="tabular-nums">输出 {formatPrice(model.OutputPrice)}</span>
+                              </div>
                             </div>
                           </div>
                         </div>

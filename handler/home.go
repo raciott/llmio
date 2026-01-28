@@ -31,6 +31,19 @@ type MetricsSummaryRes struct {
 	TotalFailureReqs int64   `json:"totalFailureReqs"`
 }
 
+type RequestAmountPoint struct {
+	Hour     int     `json:"hour"`
+	Requests int64   `json:"requests"`
+	Amount   float64 `json:"amount"`
+}
+
+type RequestAmountRes struct {
+	TotalRequests int64                `json:"total_requests"`
+	TotalAmount   float64              `json:"total_amount"`
+	Range         string               `json:"range"`
+	Points        []RequestAmountPoint `json:"points"`
+}
+
 func Metrics(c *gin.Context) {
 	days, err := strconv.Atoi(c.Param("days"))
 	if err != nil {
@@ -128,6 +141,82 @@ func MetricsSummary(c *gin.Context) {
 		TodayFailureReqs: todayFailure,
 		TotalSuccessReqs: totalSuccess,
 		TotalFailureReqs: totalFailure,
+	})
+}
+
+// RequestAmountTrend 返回今日请求次数与金额的小时分布
+func RequestAmountTrend(c *gin.Context) {
+	ctx := c.Request.Context()
+	now := time.Now()
+	year, month, day := now.Date()
+	startOfDay := time.Date(year, month, day, 0, 0, 0, 0, now.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	base := models.DB.Model(&models.ChatLog{}).
+		Where("deleted_at IS NULL").
+		Where("created_at >= ? AND created_at < ?", startOfDay, endOfDay)
+
+	totalRequests, err := gorm.G[models.ChatLog](models.DB).Where("deleted_at IS NULL").Where("created_at >= ? AND created_at < ?", startOfDay, endOfDay).Count(ctx, "id")
+	if err != nil {
+		common.InternalServerError(c, "Failed to count requests: "+err.Error())
+		return
+	}
+
+	var totalAmount sql.NullFloat64
+	if err := base.Select("COALESCE(SUM(total_cost),0) AS amount").Scan(&totalAmount).Error; err != nil {
+		common.InternalServerError(c, "Failed to sum amount: "+err.Error())
+		return
+	}
+
+	type hourRow struct {
+		HourBucket time.Time `gorm:"column:hour_bucket"`
+		Requests   int64     `gorm:"column:requests"`
+		Amount     float64   `gorm:"column:amount"`
+	}
+	rows := make([]hourRow, 0)
+	if err := models.DB.Raw(
+		`SELECT date_trunc('hour', created_at) AS hour_bucket,
+		        COUNT(*) AS requests,
+		        COALESCE(SUM(total_cost),0) AS amount
+		   FROM chat_logs
+		  WHERE deleted_at IS NULL
+		    AND created_at >= ? AND created_at < ?
+		  GROUP BY hour_bucket
+		  ORDER BY hour_bucket`,
+		startOfDay,
+		endOfDay,
+	).Scan(&rows).Error; err != nil {
+		common.InternalServerError(c, "Failed to query trend: "+err.Error())
+		return
+	}
+
+	hourMap := make(map[int]hourRow, len(rows))
+	for _, row := range rows {
+		hourMap[row.HourBucket.In(now.Location()).Hour()] = row
+	}
+
+	points := make([]RequestAmountPoint, 0, 24)
+	for hour := 0; hour < 24; hour++ {
+		if row, ok := hourMap[hour]; ok {
+			points = append(points, RequestAmountPoint{
+				Hour:     hour,
+				Requests: row.Requests,
+				Amount:   row.Amount,
+			})
+		} else {
+			points = append(points, RequestAmountPoint{
+				Hour:     hour,
+				Requests: 0,
+				Amount:   0,
+			})
+		}
+	}
+
+	common.Success(c, RequestAmountRes{
+		TotalRequests: totalRequests,
+		TotalAmount:   totalAmount.Float64,
+		Range:         "today",
+		Points:        points,
 	})
 }
 

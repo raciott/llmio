@@ -39,6 +39,12 @@ type ModelRequest struct {
 	Breaker  bool   `json:"breaker"`
 }
 
+type ModelWithPrice struct {
+	models.Model
+	InputPrice  *float64 `json:"InputPrice"`
+	OutputPrice *float64 `json:"OutputPrice"`
+}
+
 // ModelWithProviderRequest represents the request body for creating/updating a model-provider association
 type ModelWithProviderRequest struct {
 	ModelID          uint              `json:"model_id"`
@@ -282,7 +288,47 @@ func GetModels(c *gin.Context) {
 		return
 	}
 
-	response := common.NewPaginationResponse(list, total, params)
+	names := make([]string, 0, len(list))
+	for _, model := range list {
+		name := strings.ToLower(strings.TrimSpace(model.Name))
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+
+	priceMap := make(map[string]models.ModelPrice)
+	if len(names) > 0 {
+		prices := make([]models.ModelPrice, 0, len(names))
+		if err := models.DB.WithContext(c.Request.Context()).
+			Where("model_id IN ?", names).
+			Find(&prices).Error; err != nil {
+			common.InternalServerError(c, "Failed to query model prices: "+err.Error())
+			return
+		}
+		for _, price := range prices {
+			priceMap[price.ModelID] = price
+		}
+	}
+
+	withPrices := make([]ModelWithPrice, 0, len(list))
+	for _, model := range list {
+		key := strings.ToLower(strings.TrimSpace(model.Name))
+		var inputPrice *float64
+		var outputPrice *float64
+		if price, ok := priceMap[key]; ok {
+			input := price.Input
+			output := price.Output
+			inputPrice = &input
+			outputPrice = &output
+		}
+		withPrices = append(withPrices, ModelWithPrice{
+			Model:       model,
+			InputPrice:  inputPrice,
+			OutputPrice: outputPrice,
+		})
+	}
+
+	response := common.NewPaginationResponse(withPrices, total, params)
 	common.Success(c, response)
 }
 

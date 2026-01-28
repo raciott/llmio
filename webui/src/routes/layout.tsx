@@ -33,8 +33,13 @@ export default function Layout() {
   const { snowEnabled, setSnowEnabled } = useSnow();
   const navigate = useNavigate();
   const location = useLocation(); // 用于高亮当前选中的菜单
+  const token = localStorage.getItem("authToken")?.trim() || "";
+  const isAuthKeyToken = token.startsWith("sk-github.com/racio/llmio-");
 
   useEffect(() => {
+    if (isAuthKeyToken) {
+      return undefined;
+    }
     let active = true;
 
     const fetchVersion = async () => {
@@ -57,6 +62,9 @@ export default function Layout() {
 
   // Check for updates when on home page
   useEffect(() => {
+    if (isAuthKeyToken) {
+      return;
+    }
     if (location.pathname === '/') {
       const checkForUpdates = async () => {
         try {
@@ -103,7 +111,7 @@ export default function Layout() {
               className="text-primary text-2xl transition-all duration-300 group-hover:text-transparent group-hover:bg-clip-text"
               style={{ backgroundImage: "linear-gradient(90deg, hsl(var(--primary)), hsl(var(--foreground)))" }}
             >
-              llmio
+              Orvion
             </span> 
           </div>
 
@@ -167,39 +175,41 @@ export default function Layout() {
           <div className="flex w-full overflow-y-hidden min-w-0">
         
         {/* 左侧侧边栏 Sidebar */}
-        <aside 
-          className="mr-4 mt-3 md:mt-5 flex w-16 shrink-0 flex-col items-center self-start rounded-[30px] bg-card/90 py-5 shadow-[0_12px_32px_rgba(0,0,0,0.12)] ring-1 ring-border/40 backdrop-blur-sm"
-        >
-          <nav>
-            <ul className="flex flex-col items-center gap-3">
-              {navItems.map((item) => {
-                const isActive = location.pathname === item.to;
-                return (
-                  <li key={item.to}>
-                    <Link to={item.to}>
-                      <div
-                        className={`
-                          group relative flex size-11 items-center justify-center rounded-2xl transition-all duration-200
-                          ${isActive
-                            ? "bg-amber-100 text-amber-900 shadow-sm ring-1 ring-amber-200/80 dark:bg-amber-200/10 dark:text-amber-200 dark:ring-amber-200/30"
-                            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                          }
-                        `}
-                        title={item.label}
-                        aria-label={item.label}
-                      >
-                        <span className="text-lg transition-transform duration-200 group-hover:scale-105">
-                          {item.icon}
-                        </span>
-                        <span className="sr-only">{item.label}</span>
-                      </div>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
-        </aside>
+        {!isAuthKeyToken && (
+          <aside
+            className="mr-4 mt-3 md:mt-5 flex w-16 shrink-0 flex-col items-center self-start rounded-[30px] bg-card/90 py-5 shadow-[0_12px_32px_rgba(0,0,0,0.12)] ring-1 ring-border/40 backdrop-blur-sm"
+          >
+            <nav>
+              <ul className="flex flex-col items-center gap-3">
+                {navItems.map((item) => {
+                  const isActive = location.pathname === item.to;
+                  return (
+                    <li key={item.to}>
+                      <Link to={item.to}>
+                        <div
+                          className={`
+                            group relative flex size-11 items-center justify-center rounded-2xl transition-all duration-200
+                            ${isActive
+                              ? "bg-amber-100 text-amber-900 shadow-sm ring-1 ring-amber-200/80 dark:bg-amber-200/10 dark:text-amber-200 dark:ring-amber-200/30"
+                              : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                            }
+                          `}
+                          title={item.label}
+                          aria-label={item.label}
+                        >
+                          <span className="text-lg transition-transform duration-200 group-hover:scale-105">
+                            {item.icon}
+                          </span>
+                          <span className="sr-only">{item.label}</span>
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+          </aside>
+        )}
 
         {/* 右侧主内容区域 */}
         <main className="flex-1 min-w-0 bg-muted/20 p-2 md:p-4 transition-all duration-300">

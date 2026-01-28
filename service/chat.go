@@ -88,11 +88,9 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 
 	providerMap := providersWithMeta.ProviderMap
 
-	var anthropicProxyIP string
-	if style == consts.StyleAnthropic {
-		if cfg, ok := loadAnthropicProxyIPConfig(ctx); ok {
-			anthropicProxyIP = cfg.ProxyIP
-		}
+	var proxyIP string
+	if cfg, ok := loadAnthropicProxyIPConfig(ctx); ok {
+		proxyIP = cfg.ProxyIP
 	}
 
 	// 收集重试过程中的err日志
@@ -196,9 +194,9 @@ func balanceChatInternal(c *gin.Context, start time.Time, style string, before B
 				}
 			}
 			header := BuildHeaders(reqMeta.Header, withHeader, customHeaders, before.Stream)
-			if anthropicProxyIP != "" && provider.Type == consts.StyleAnthropic {
-				header.Set("X-Forwarded-For", anthropicProxyIP)
-				header.Set("X-Real-IP", anthropicProxyIP)
+			if proxyIP != "" {
+				header.Set("X-Forwarded-For", proxyIP)
+				header.Set("X-Real-IP", proxyIP)
 			}
 
 			var lastStatus int
@@ -316,6 +314,7 @@ func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, pr
 		if err != nil {
 			return err
 		}
+		log.TotalCost = calculateTotalCost(ctx, before.Model, log.Usage)
 		if _, err := gorm.G[models.ChatLog](models.DB).Where("id = ?", logId).Updates(ctx, *log); err != nil {
 			return err
 		}
@@ -391,6 +390,55 @@ func BuildHeaders(source http.Header, withHeader bool, customHeaders map[string]
 	return header
 }
 
+func calculateTotalCost(ctx context.Context, modelName string, usage models.Usage) float64 {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	if modelName == "" {
+		return 0
+	}
+	price, err := loadModelPrice(ctx, modelName)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.Warn("获取模型价格失败", "model", modelName, "error", err)
+		}
+		return 0
+	}
+
+	cachedTokens := parseCachedTokens(usage.PromptTokensDetails)
+	if cachedTokens > usage.PromptTokens {
+		cachedTokens = usage.PromptTokens
+	}
+	billableInput := usage.PromptTokens - cachedTokens
+
+	total := float64(billableInput)*price.Input +
+		float64(usage.CompletionTokens)*price.Output +
+		float64(cachedTokens)*price.CacheRead
+
+	if total < 0 {
+		return 0
+	}
+	return total
+}
+
+func loadModelPrice(ctx context.Context, modelName string) (models.ModelPrice, error) {
+	price, err := gorm.G[models.ModelPrice](models.DB).Where("model_id = ?", modelName).First(ctx)
+	return price, err
+}
+
+func parseCachedTokens(details string) int64 {
+	raw := strings.TrimSpace(details)
+	if raw == "" {
+		return 0
+	}
+	var parsed models.PromptTokensDetails
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return 0
+	}
+	if parsed.CachedTokens < 0 {
+		return 0
+	}
+	return parsed.CachedTokens
+}
+
 func loadAnthropicProxyIPConfig(ctx context.Context) (models.AnthropicProxyIPConfig, bool) {
 	config, err := gorm.G[models.Config](models.DB).
 		Where("key = ?", models.KeyAnthropicProxyIP).
@@ -399,7 +447,7 @@ func loadAnthropicProxyIPConfig(ctx context.Context) (models.AnthropicProxyIPCon
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return models.AnthropicProxyIPConfig{}, false
 		}
-		slog.Error("读取 Claude 代理 IP 配置失败", "error", err)
+		slog.Error("读取全局代理 IP 配置失败", "error", err)
 		return models.AnthropicProxyIPConfig{}, false
 	}
 	raw := strings.TrimSpace(config.Value)
@@ -408,7 +456,7 @@ func loadAnthropicProxyIPConfig(ctx context.Context) (models.AnthropicProxyIPCon
 	}
 	var cfg models.AnthropicProxyIPConfig
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		slog.Error("解析 Claude 代理 IP 配置失败", "error", err)
+		slog.Error("解析全局代理 IP 配置失败", "error", err)
 		return models.AnthropicProxyIPConfig{}, false
 	}
 	cfg.ProxyIP = strings.TrimSpace(cfg.ProxyIP)

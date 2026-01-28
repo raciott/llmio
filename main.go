@@ -167,6 +167,12 @@ func main() {
 		v1.POST("/messages/count_tokens", authAnthropic, handler.CountTokens)
 	}
 
+	// API Key 概览（用于前端在 API Key 登录时展示）
+	authKey := router.Group("/auth-key", authOpenAI)
+	{
+		authKey.GET("/summary", handler.AuthKeySummary)
+	}
+
 	api := router.Group("/api")
 	{
 		api.Use(middleware.Auth(token))
@@ -174,6 +180,7 @@ func main() {
 		api.GET("/metrics/summary", handler.MetricsSummary)
 		api.GET("/metrics/counts", handler.Counts)
 		api.GET("/metrics/projects", handler.ProjectCounts)
+		api.GET("/metrics/request-amount", handler.RequestAmountTrend)
 
 		// Provider management
 		api.GET("/providers/template", handler.GetProviderTemplates)
@@ -229,6 +236,8 @@ func main() {
 		api.GET("/test/count_tokens", handler.TestCountTokens)
 	}
 	setwebui(router)
+
+	service.StartPriceSync(context.Background())
 
 	port := os.Getenv("LLMIO_SERVER_PORT")
 	if port == "" {

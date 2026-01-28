@@ -11,8 +11,9 @@ export default function LoginPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (token.trim()) {
-      localStorage.setItem("authToken", token);
+    const trimmed = token.trim();
+    if (trimmed) {
+      localStorage.setItem("authToken", trimmed);
       // Redirect to home page after login
       navigate("/");
     }

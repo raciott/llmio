@@ -17,3 +17,6 @@ add: fmt tidy
 
 webui: 
 	cd webui && npm install && npm run build
+
+all:
+	make webui && make run

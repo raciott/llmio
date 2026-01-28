@@ -25,6 +25,27 @@ export interface Model {
   Breaker?: number | null;
   // 后端当前返回为 0/1（对应 models.status）
   Status?: number | null;
+  InputPrice?: number | null;
+  OutputPrice?: number | null;
+}
+
+export interface AuthKeySummary {
+  name: string;
+  keyMasked: string;
+  expiresAt: string | null;
+  expireInDays: number | null;
+  totalCost: number;
+  totalRequests: number;
+  successRequests: number;
+  failureRequests: number;
+  totalTimeMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  inputCost: number;
+  outputCost: number;
+  allowAll: boolean;
+  models: string[];
 }
 
 export interface ModelWithProvider {
@@ -147,7 +168,7 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
   const url = `${API_BASE}${endpoint}`;
 
   // Get token from localStorage
-  const token = localStorage.getItem("authToken");
+  const token = localStorage.getItem("authToken")?.trim();
 
   const response = await fetch(url, {
     headers: {
@@ -176,8 +197,40 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
   return data.data as T;
 }
 
+async function authKeyRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const token = localStorage.getItem("authToken")?.trim();
+
+  const response = await fetch(endpoint, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+    ...options,
+  });
+
+  if (response.status === 401) {
+    window.location.href = '/login';
+    throw new Error('Unauthorized');
+  }
+
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  if (data.code !== 200) {
+    throw new Error(`${data.message}`);
+  }
+  return data.data as T;
+}
+
 export async function getVersion(): Promise<string> {
   return apiRequest<string>('/version');
+}
+
+export async function getAuthKeySummary(): Promise<AuthKeySummary> {
+  return authKeyRequest<AuthKeySummary>('/auth-key/summary');
 }
 
 // Provider API functions
@@ -547,6 +600,12 @@ export interface AnthropicProxyIPConfig {
   proxy_ip: string;
 }
 
+export interface ModelPriceSyncConfig {
+  enabled: boolean;
+  interval_minutes: number;
+  source_url: string;
+}
+
 export const configAPI = {
   getConfig: (key: string) =>
     apiRequest<ConfigResponse>(`/config/${key}`),
@@ -581,6 +640,7 @@ export interface ChatLog {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  total_cost: number;
   // 后端存的是 JSON 字符串（或空字符串）；前端使用时需要做解析/兜底
   prompt_tokens_details: PromptTokensDetails | string | null;
   key_name: string;
@@ -607,6 +667,19 @@ export interface LogsResponse {
   page: number;
   page_size: number;
   pages: number;
+}
+
+export interface RequestAmountPoint {
+  hour: number;
+  requests: number;
+  amount: number;
+}
+
+export interface RequestAmountSummary {
+  total_requests: number;
+  total_amount: number;
+  range: string;
+  points: RequestAmountPoint[];
 }
 
 export async function getUserAgents(): Promise<string[]> {
@@ -637,6 +710,10 @@ export async function getLogs(
   if (filters.authKeyId) params.append("auth_key_id", filters.authKeyId);
 
   return apiRequest<LogsResponse>(`/logs?${params.toString()}`);
+}
+
+export async function getRequestAmountTrend(): Promise<RequestAmountSummary> {
+  return apiRequest<RequestAmountSummary>('/metrics/request-amount');
 }
 
 export async function getChatIO(logId: number | string): Promise<ChatIO> {
